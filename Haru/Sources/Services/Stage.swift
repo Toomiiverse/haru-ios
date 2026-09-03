@@ -83,6 +83,17 @@ final class Stage: NSObject, WKNavigationDelegate {
         run("window.haruStage.mouth(\(String(format: "%.3f", open)))")
     }
 
+    /// Zoom 1 fits her whole height; 2 shows her top half. Lift moves her up
+    /// by that share of the stage.
+    func frame(zoom: Double, lift: Double) {
+        run("window.haruStage.frame(\(String(format: "%.3f", zoom)), \(String(format: "%.3f", lift)))")
+    }
+
+    /// How far and how often she looks about: 0 still, 1 lively.
+    func motion(_ amount: Double) {
+        run("window.haruStage.motion(\(String(format: "%.3f", amount)))")
+    }
+
     private func run(_ js: String) {
         if ready, let web {
             web.evaluateJavaScript(js)

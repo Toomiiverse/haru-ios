@@ -41,10 +41,18 @@
   const pending = { expression: null };
   let claim = null, claimUntil = 0;
   let mouthTarget = 0, mouthUntil = 0;
+  // How she is framed: zoom 1 fits her whole height (the desktop's framing),
+  // 2 shows her top half; lift moves her up by a share of the stage. And how
+  // much she looks about: 0 still, 1 the phone page's full wander.
+  let framing = { zoom: 2, lift: 0 };
+  let motion = 0.6;
+  let applyFraming = () => {};
   window.haruStage = {
     express: (name) => { pending.expression = name; },
     attend: (why, ms) => { claim = why || null; claimUntil = performance.now() + (ms === undefined ? 1500 : ms); },
     mouth: (open) => { mouthTarget = clamp(Number(open) || 0, 0, 1); mouthUntil = performance.now() + 400; },
+    frame: (zoom, lift) => { framing = { zoom: clamp(Number(zoom) || 1, 0.5, 4), lift: clamp(Number(lift) || 0, -1, 1) }; applyFraming(); },
+    motion: (amount) => { motion = clamp(Number(amount) || 0, 0, 1); },
   };
 
   try {
@@ -75,16 +83,20 @@
     step('standing her up');
     app.stage.addChild(model);
 
-    // Anchored at the bottom middle and scaled to fit, the way the desktop does
-    // it: a Live2D model's own origin is nowhere useful.
+    // Scaled to fit the way the desktop does it, times the zoom, and anchored
+    // at her crown so zooming reveals her downwards rather than cutting her
+    // head off. A Live2D model's own origin is nowhere useful.
     const baseWidth = model.width / model.scale.x, baseHeight = model.height / model.scale.y;
     const fit = () => {
       const w = app.renderer.screen.width, h = app.renderer.screen.height;
       if (!baseWidth || !baseHeight || !w || !h) return;
-      model.scale.set(Math.min(w / baseWidth, h / baseHeight) * 0.88);
-      model.anchor.set(0.5, 1);
-      model.position.set(w / 2, h);
+      const scale = Math.min(w / baseWidth, h / baseHeight) * 0.88 * framing.zoom;
+      model.scale.set(scale);
+      model.anchor.set(0.5, 0);
+      const spare = Math.max(0, h - baseHeight * scale);
+      model.position.set(w / 2, spare / 2 - framing.lift * h);
     };
+    applyFraming = fit;
     fit();
     new ResizeObserver(fit).observe(host);
 
@@ -116,12 +128,9 @@
       }
       return wander(t);
     };
-    const look = () => {
-      const w = app.renderer.screen.width, h = app.renderer.screen.height;
-      const at = target(performance.now());
-      // Her face sits in the upper part of the box; a glance is measured from there.
-      model.focus(w / 2 + at.x * w / 2, h * 0.4 + at.y * h / 2);
-    };
+    // Four targets a second is plenty; the frame loop below eases her there.
+    let gazeTarget = { x: 0, y: 0 }, gazeNow = { x: 0, y: 0 }, lastTick = performance.now();
+    const look = () => { gazeTarget = target(performance.now()); };
     setInterval(look, 250);
     host.addEventListener('pointermove', (e) => {
       const r = host.getBoundingClientRect();
@@ -138,6 +147,18 @@
     app.ticker.add(() => {
       for (const [id, value] of posed) setParam(id, value);
       const now = performance.now();
+      // A glance, not a flick: eased over about three quarters of a second,
+      // and never all the way to the edge — how far depends on the liveliness
+      // she was given. Her face sits in the upper part of the box, so a glance
+      // is measured from there.
+      const dt = Math.min(0.1, (now - lastTick) / 1000);
+      lastTick = now;
+      const k = 1 - Math.exp(-dt / 0.75);
+      gazeNow.x += (gazeTarget.x - gazeNow.x) * k;
+      gazeNow.y += (gazeTarget.y - gazeNow.y) * k;
+      const reach = 0.2 + 0.55 * motion;
+      const w = app.renderer.screen.width, h = app.renderer.screen.height;
+      model.focus(w / 2 + gazeNow.x * reach * w / 2, h * 0.4 + gazeNow.y * reach * h / 2, true);
       if (now < mouthUntil) {
         mouthNow += (mouthTarget - mouthNow) * 0.4;
         setParam('ParamMouthOpenY', mouthNow);
@@ -155,6 +176,7 @@
     };
     window.haruStage.express = express;
     if (pending.expression) express(pending.expression);
+    fit();
 
     const faces = (model.internalModel && model.internalModel.settings && model.internalModel.settings.expressions || []).length;
     host.classList.add('alive');
