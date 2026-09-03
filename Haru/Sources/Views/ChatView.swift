@@ -69,14 +69,18 @@ struct ChatView: View {
     // MARK: Her stage
 
     private var stageView: some View {
-        StageWebView(stage: chat.stage, base: session.client.base)
+        StageWebView(stage: chat.stage, client: session.client)
             .frame(height: stageTall ? 300 : 150)
             .frame(maxWidth: .infinity)
             .background(Color("LaunchBackground"))
             .overlay(alignment: .bottom) {
                 switch chat.stage.state {
-                case .loading:
-                    ProgressView().padding(.bottom, 8)
+                case .loading(let what):
+                    HStack(spacing: 8) {
+                        ProgressView().controlSize(.small)
+                        Text(what).font(.footnote).foregroundStyle(.secondary).lineLimit(1)
+                    }
+                    .padding(.bottom, 8)
                 case .failed(let why):
                     Text("She is not moving — \(why).")
                         .font(.footnote)

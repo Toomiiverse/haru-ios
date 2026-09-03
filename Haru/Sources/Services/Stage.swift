@@ -2,30 +2,37 @@ import Observation
 import SwiftUI
 import WebKit
 
-/// Her on stage: a web view running Resources/stage.html against her server,
-/// which is the same pixi + Cubism runtime and model the desktop shows. The
-/// app's login cookie is copied into the web view so the model, the runtime
-/// and /api/model all load behind the login as they should.
+/// Her on stage: a web view running Resources/stage.html, which is the same
+/// pixi + Cubism runtime and model the desktop shows. The page lives at a
+/// scheme of its own (haru-stage://) that the app answers itself, fetching
+/// every file — runtime, manifest, textures, /api/model — from her server
+/// with the app's own login. Nothing about cookies or origins is left to the
+/// web view, and every file is seen going by, so a stall has a name.
 @MainActor @Observable
 final class Stage: NSObject, WKNavigationDelegate {
     enum State: Equatable {
-        case loading
+        case loading(String)
         case alive(expressions: Int)
         case failed(String)
     }
 
-    private(set) var state: State = .loading
+    static let scheme = "haru-stage"
+    private(set) var state: State = .loading("opening the stage")
     private weak var web: WKWebView?
-    private var base: URL?
     private var ready = false
     private var queue: [String] = []
+    private var relay: Relay?
 
-    static func makeWebView() -> WKWebView {
+    func makeWebView(client: HaruClient) -> WKWebView {
         let config = WKWebViewConfiguration()
-        // The default store keeps the HTTP cache, so 28MB of model is fetched
-        // once and then served from the phone until the server says otherwise.
         config.websiteDataStore = .default()
         config.allowsInlineMediaPlayback = true
+        let courier = Courier(client: client)
+        courier.onProgress = { [weak self] line in self?.progress(line) }
+        config.setURLSchemeHandler(courier, forURLScheme: Self.scheme)
+        let relay = Relay(self)
+        self.relay = relay
+        config.userContentController.add(relay, name: "stage")
         let web = WKWebView(frame: .zero, configuration: config)
         web.isOpaque = false
         web.backgroundColor = .clear
@@ -34,35 +41,28 @@ final class Stage: NSObject, WKNavigationDelegate {
         web.scrollView.bounces = false
         web.scrollView.contentInsetAdjustmentBehavior = .never
         web.isInspectable = true
+        web.navigationDelegate = self
+        self.web = web
+        load()
         return web
     }
 
-    func attach(_ web: WKWebView, base: URL) {
-        self.web = web
-        self.base = base
-        web.navigationDelegate = self
-        web.configuration.userContentController.add(Relay(self), name: "stage")
-        Task { await load() }
-    }
+    func reload() { load() }
 
-    func reload() {
-        Task { await load() }
-    }
-
-    private func load() async {
-        guard let web, let base else { return }
+    private func load() {
+        guard let web else { return }
         guard let url = Bundle.main.url(forResource: "stage", withExtension: "html"),
               let html = try? String(contentsOf: url, encoding: .utf8) else {
             state = .failed("the stage page is missing from the app")
             return
         }
-        state = .loading
+        state = .loading("opening the stage")
         ready = false
-        let jar = web.configuration.websiteDataStore.httpCookieStore
-        for cookie in HTTPCookieStorage.shared.cookies(for: base) ?? [] {
-            await jar.setCookie(cookie)
-        }
-        web.loadHTMLString(html, baseURL: base)
+        web.loadHTMLString(html, baseURL: URL(string: "\(Self.scheme)://her/")!)
+    }
+
+    private func progress(_ line: String) {
+        if case .loading = state { state = .loading(line) }
     }
 
     // MARK: What the app asks of her
@@ -104,6 +104,8 @@ final class Stage: NSObject, WKNavigationDelegate {
     fileprivate func receive(_ body: Any) {
         guard let message = body as? [String: Any], let event = message["event"] as? String else { return }
         switch event {
+        case "step":
+            progress(message["what"] as? String ?? "loading")
         case "alive":
             state = .alive(expressions: message["expressions"] as? Int ?? 0)
         case "failed":
@@ -130,6 +132,10 @@ final class Stage: NSObject, WKNavigationDelegate {
         MainActor.assumeIsolated { state = .failed(error.localizedDescription) }
     }
 
+    nonisolated func webViewWebContentProcessDidTerminate(_ webView: WKWebView) {
+        MainActor.assumeIsolated { state = .failed("the stage crashed; hold to reload") }
+    }
+
     /// The web view holds its message handlers strongly; this stands in so the
     /// stage itself is not kept alive by its own web view.
     private final class Relay: NSObject, WKScriptMessageHandler {
@@ -142,14 +148,82 @@ final class Stage: NSObject, WKNavigationDelegate {
     }
 }
 
+/// Answers haru-stage:// requests from her server, through the app's own
+/// session — same cookie, same cache — and says what went by.
+private final class Courier: NSObject, WKURLSchemeHandler {
+    let client: HaruClient
+    var onProgress: ((String) -> Void)?
+    private var flights: [ObjectIdentifier: Task<Void, Never>] = [:]
+
+    init(client: HaruClient) { self.client = client }
+
+    func webView(_ webView: WKWebView, start task: WKURLSchemeTask) {
+        guard let asked = task.request.url,
+              var parts = URLComponents(url: client.base, resolvingAgainstBaseURL: false) else {
+            task.didFailWithError(HaruError.badAddress)
+            return
+        }
+        parts.path = asked.path.isEmpty ? "/" : asked.path
+        parts.query = asked.query
+        guard let real = parts.url else {
+            task.didFailWithError(HaruError.badAddress)
+            return
+        }
+        var request = URLRequest(url: real)
+        request.httpMethod = task.request.httpMethod
+        request.httpBody = task.request.httpBody
+        for (name, value) in task.request.allHTTPHeaderFields ?? [:] {
+            let key = name.lowercased()
+            if key == "host" || key == "origin" || key == "referer" || key == "cookie" { continue }
+            request.setValue(value, forHTTPHeaderField: name)
+        }
+        let name = asked.lastPathComponent.isEmpty ? asked.path : asked.lastPathComponent
+        let id = ObjectIdentifier(task)
+        onProgress?("fetching \(name)…")
+        let session = client.session
+        flights[id] = Task { @MainActor [weak self] in
+            do {
+                let (data, response) = try await session.data(for: request)
+                guard let self, self.flights[id] != nil else { return }
+                let http = response as? HTTPURLResponse
+                let status = http?.statusCode ?? 200
+                var headers: [String: String] = [
+                    "Content-Type": http?.value(forHTTPHeaderField: "Content-Type") ?? "application/octet-stream",
+                    "Content-Length": String(data.count),
+                    "Access-Control-Allow-Origin": "*",
+                ]
+                if let cache = http?.value(forHTTPHeaderField: "Cache-Control") { headers["Cache-Control"] = cache }
+                guard let answer = HTTPURLResponse(url: asked, statusCode: status, httpVersion: "HTTP/1.1", headerFields: headers) else {
+                    task.didFailWithError(HaruError.badAddress)
+                    return
+                }
+                task.didReceive(answer)
+                task.didReceive(data)
+                task.didFinish()
+                self.onProgress?(status < 300 ? "got \(name) (\(data.count / 1024) KB)" : "\(name) answered \(status)")
+                self.flights[id] = nil
+            } catch {
+                guard let self, self.flights[id] != nil else { return }
+                task.didFailWithError(error)
+                self.onProgress?("\(name): \(error.localizedDescription)")
+                self.flights[id] = nil
+            }
+        }
+    }
+
+    func webView(_ webView: WKWebView, stop task: WKURLSchemeTask) {
+        let id = ObjectIdentifier(task)
+        flights[id]?.cancel()
+        flights[id] = nil
+    }
+}
+
 struct StageWebView: UIViewRepresentable {
     let stage: Stage
-    let base: URL
+    let client: HaruClient
 
     func makeUIView(context: Context) -> WKWebView {
-        let web = Stage.makeWebView()
-        stage.attach(web, base: base)
-        return web
+        stage.makeWebView(client: client)
     }
 
     func updateUIView(_ web: WKWebView, context: Context) {}

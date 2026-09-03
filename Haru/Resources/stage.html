@@ -25,10 +25,13 @@
     document.head.appendChild(s);
   });
   const get = async (url) => {
-    const r = await fetch(url, { credentials: 'include' });
+    const r = await fetch(url);
     if (!r.ok) throw new Error(url + ' answered ' + r.status);
     return r.json();
   };
+  const step = (what) => tell({ event: 'step', what: what });
+  window.addEventListener('error', (e) => tell({ event: 'failed', why: (e && e.message) || 'a script error' }));
+  window.addEventListener('unhandledrejection', (e) => tell({ event: 'failed', why: String(e && e.reason && e.reason.message || e.reason || 'a promise failed') }));
   const clamp = (v, lo, hi) => (v < lo ? lo : v > hi ? hi : v);
   // A number in [0,1) for an integer, the same every time: the beat of the wander.
   const hashN = (n) => { const x = Math.sin(n * 12.9898 + 78.233) * 43758.5453; return x - Math.floor(x); };
@@ -45,8 +48,10 @@
   };
 
   try {
+    step('asking which model she wears');
     const { entry, pose } = await get('/api/model');
     if (!entry) throw new Error('no model is imported on the desktop');
+    step('fetching her runtime');
     // Order matters: the plugin reads a global PIXI when it loads, and the
     // Cubism runtime has to exist before any model is built. noeval replaces
     // pixi's new Function() shader build so no eval is needed.
@@ -65,7 +70,9 @@
       view: canvas, backgroundAlpha: 0, antialias: true,
       resolution: Math.min(window.devicePixelRatio || 1, 2), autoDensity: true, resizeTo: host,
     });
+    step('fetching her model (29 MB the first time)');
     const model = await PIXI.live2d.Live2DModel.from('/model/' + encodeURIComponent(entry), { autoInteract: false });
+    step('standing her up');
     app.stage.addChild(model);
 
     // Anchored at the bottom middle and scaled to fit, the way the desktop does

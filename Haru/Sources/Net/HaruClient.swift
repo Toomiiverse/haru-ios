@@ -34,6 +34,9 @@ struct HaruClient: Sendable {
         config.timeoutIntervalForRequest = 180
         config.timeoutIntervalForResource = 900
         config.waitsForConnectivity = true
+        // Her model is 29 MB across forty files and marked immutable by the
+        // server; a cache this size keeps it on the phone between launches.
+        config.urlCache = URLCache(memoryCapacity: 32 * 1024 * 1024, diskCapacity: 256 * 1024 * 1024)
         session = URLSession(configuration: config)
     }
 
