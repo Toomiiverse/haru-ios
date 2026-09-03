@@ -14,8 +14,15 @@ What it does:
 - **Chat** — her replies stream in as she writes them, split into the bubbles
   she would have sent; her expression changes with the mood of each line, and
   she says it out loud through her own voice (`/api/speak`). Thumbs up or down on a
-  reply, redo her last one, send a photo or a file, or tap the mic and talk
-  (recorded as WAV, transcribed by her ears on the server).
+  reply, redo her last one, send a photo or a file.
+- **Talk, hands-free** — tap the mic once and she listens the way the phone
+  page's talk mode does: awake for a while after the tap, then asleep until
+  you say "Haru" or "Hey Haru" (with or without the rest of the sentence in
+  the same breath). Speaking over her cuts her off and she is told so. Her
+  ears are the server's Whisper; the wake phrase and the state machine are
+  the desktop's. Apple's echo cancellation keeps her own voice from waking
+  her. It keeps listening with the screen locked, so stop it when you're
+  done (the orange microphone dot says it's on).
 - **Status** — where you stand: mood, bond, meters, patience, grudge, what she
   is waiting on (tick things off from here).
 - **Diary**, **Her** — her diary and her own things, nights out, likes, wants.
@@ -76,7 +83,5 @@ switch under More → Where you are and name a place "home".
   (a `.p8` key, token-based auth, HTTP/2 to `api.push.apple.com`). Until then
   she relies on background refresh, which iOS runs on its own schedule —
   minutes to hours apart, and not at all in Low Power Mode.
-- **Hands-free talk mode.** The page's voice loop (say her name, she wakes,
-  speak over her) is not carried over; the mic here is tap-to-talk.
 - **Wardrobe and poking.** The stage holds the pose the desktop saved, but the
   wardrobe is edited on the desktop only, and there are no hit areas to poke.

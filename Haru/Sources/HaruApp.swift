@@ -14,7 +14,7 @@ struct HaruApp: App {
         _locator = State(initialValue: Locator(session: session))
         // Must happen before launch finishes, which is here.
         Refresh.register(session: session)
-        Voice.configureSession()
+        Audio.configureSession(listening: false)
     }
 
     var body: some Scene {

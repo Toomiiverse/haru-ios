@@ -7,8 +7,6 @@ struct ChatView: View {
     @Environment(ChatStore.self) private var chat
     @Environment(\.scenePhase) private var phase
     @State private var draft = ""
-    @State private var ear = Ear()
-    @State private var spokeOver = false
     @State private var showPhotos = false
     @State private var showFiles = false
     @State private var photo: PhotosPickerItem?
@@ -106,8 +104,12 @@ struct ChatView: View {
     private var state: String {
         if chat.busy { return "thinking…" }
         if chat.transcribing { return "working out what you said…" }
-        if chat.voice.speaking { return "talking" }
-        return chat.emotion
+        if chat.audio.speaking { return "talking" }
+        switch chat.talkState {
+        case .asleep: return "asleep — say “Hey Haru”"
+        case .awake: return "listening"
+        default: return chat.emotion
+        }
     }
 
     // MARK: Transcript
@@ -141,45 +143,67 @@ struct ChatView: View {
     private var composer: some View {
         VStack(spacing: 6) {
             if !chat.staged.isEmpty { chips }
-            if ear.recording {
-                listening
-            } else {
-                HStack(alignment: .bottom, spacing: 8) {
-                    Menu {
-                        Button { showPhotos = true } label: { Label("Photo", systemImage: "photo") }
-                        Button { showFiles = true } label: { Label("File", systemImage: "doc") }
-                    } label: {
-                        Image(systemName: "plus.circle.fill").font(.title2)
+            if chat.talkState != .off { talkPill }
+            HStack(alignment: .bottom, spacing: 8) {
+                Menu {
+                    Button { showPhotos = true } label: { Label("Photo", systemImage: "photo") }
+                    Button { showFiles = true } label: { Label("File", systemImage: "doc") }
+                } label: {
+                    Image(systemName: "plus.circle.fill").font(.title2)
+                }
+                .padding(.bottom, 6)
+
+                TextField("Say something", text: $draft, axis: .vertical)
+                    .lineLimit(1...6)
+                    .onChange(of: draft) { _, now in
+                        if !now.isEmpty { chat.stage.attend("typing", ms: 1_800) }
                     }
-                    .padding(.bottom, 6)
+                    .padding(.horizontal, 12)
+                    .padding(.vertical, 8)
+                    .background(Color(uiColor: .secondarySystemBackground), in: RoundedRectangle(cornerRadius: 18))
+                    .focused($typing)
 
-                    TextField("Say something", text: $draft, axis: .vertical)
-                        .lineLimit(1...6)
-                        .onChange(of: draft) { _, now in
-                            if !now.isEmpty { chat.stage.attend("typing", ms: 1_800) }
-                        }
-                        .padding(.horizontal, 12)
-                        .padding(.vertical, 8)
-                        .background(Color(uiColor: .secondarySystemBackground), in: RoundedRectangle(cornerRadius: 18))
-                        .focused($typing)
-
-                    if canSend {
-                        Button { Task { await sendDraft() } } label: {
-                            Image(systemName: "arrow.up.circle.fill").font(.title)
-                        }
-                        .disabled(chat.busy)
-                    } else {
-                        Button { Task { await startListening() } } label: {
-                            Image(systemName: "mic.circle.fill").font(.title)
-                        }
-                        .disabled(chat.busy || chat.transcribing)
+                if canSend {
+                    Button { Task { await sendDraft() } } label: {
+                        Image(systemName: "arrow.up.circle.fill").font(.title)
+                    }
+                    .disabled(chat.busy)
+                } else {
+                    Button {
+                        if chat.talkState == .off { Task { await chat.startTalking() } } else { chat.stopTalking() }
+                    } label: {
+                        Image(systemName: chat.talkState == .off ? "mic.circle" : "mic.circle.fill")
+                            .font(.title)
+                            .foregroundStyle(chat.talkState == .awake ? Color.red : Color.accentColor)
                     }
                 }
-                .padding(.horizontal, 12)
             }
+            .padding(.horizontal, 12)
         }
         .padding(.vertical, 8)
         .background(.bar)
+    }
+
+    /// Where the conversation by voice stands, and how loud the room is.
+    private var talkPill: some View {
+        HStack(spacing: 10) {
+            Image(systemName: "waveform")
+                .foregroundStyle(chat.talkState == .awake ? .red : .secondary)
+                .symbolEffect(.variableColor.iterative, isActive: chat.talkState == .awake)
+            Text(talkLabel).font(.footnote).foregroundStyle(.secondary)
+            ProgressView(value: chat.audio.level).tint(chat.talkState == .awake ? .red : .secondary)
+        }
+        .padding(.horizontal, 12)
+    }
+
+    private var talkLabel: String {
+        switch chat.talkState {
+        case .asleep: return "Say “Hey Haru”"
+        case .awake: return "Listening…"
+        case .thinking: return "Thinking…"
+        case .speaking: return "Speaking… talk over her to cut in"
+        case .off: return ""
+        }
     }
 
     private var chips: some View {
@@ -203,45 +227,12 @@ struct ChatView: View {
         }
     }
 
-    private var listening: some View {
-        HStack(spacing: 12) {
-            Image(systemName: "waveform")
-                .foregroundStyle(.red)
-                .symbolEffect(.variableColor.iterative, isActive: true)
-            ProgressView(value: ear.level).tint(.red)
-            Button("Send") { Task { await stopListening(send: true) } }
-                .buttonStyle(.borderedProminent)
-            Button { Task { await stopListening(send: false) } } label: { Image(systemName: "xmark") }
-                .buttonStyle(.bordered)
-        }
-        .padding(.horizontal, 12)
-    }
-
     // MARK: Doing things
 
     private func sendDraft() async {
         let text = draft
         draft = ""
         await chat.send(text)
-    }
-
-    private func startListening() async {
-        guard await ear.allowed() else {
-            chat.notice = "The microphone is switched off for Haru in Settings."
-            return
-        }
-        spokeOver = chat.voice.stop()
-        if !ear.start() { chat.notice = "The microphone would not start." }
-    }
-
-    private func stopListening(send: Bool) async {
-        guard let wav = ear.stop(), send else { return }
-        guard let heard = await chat.transcribe(wav), !heard.isEmpty else {
-            chat.notice = "She did not catch that."
-            return
-        }
-        await chat.send(heard, spokeOver: spokeOver)
-        spokeOver = false
     }
 
     private func importPhoto(_ item: PhotosPickerItem) async {

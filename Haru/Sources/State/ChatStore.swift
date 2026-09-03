@@ -42,18 +42,37 @@ final class ChatStore {
     var transcribing = false
     /// Something worth an alert. Cleared by the view.
     var notice: String?
+    /// The conversation by voice: off, or where it stands.
+    private(set) var talkState = TalkState.off
 
     let session: Session
-    let voice = Voice()
+    let audio = Audio()
     let stage = Stage()
+    private var talk: Talk?
+    private var ticker: Timer?
     private var lastAskedAt = Date.distantPast
 
     init(session: Session) {
         self.session = session
-        voice.onLevel = { [weak self] level in self?.stage.mouth(level) }
+        audio.onLevel = { [weak self] level in self?.stage.mouth(level) }
+        audio.onFinished = { [weak self] in
+            guard let self, let talk = self.talk else { return }
+            self.act(talk.spokeEnd(self.now))
+        }
+        audio.onVoiceStart = { [weak self] in
+            guard let self, let talk = self.talk else { return }
+            self.act(talk.voiceStarted(self.now))
+            if talk.state != .asleep { self.stage.attend("typing", ms: 1_500) }
+        }
+        audio.onVoiceEnd = { [weak self] wav in
+            guard let self else { return }
+            Task { await self.hear(wav) }
+        }
     }
 
     private var client: HaruClient { session.client }
+    /// Milliseconds on a clock that does not jump.
+    private var now: Double { ProcessInfo.processInfo.systemUptime * 1000 }
 
     // MARK: The day
 
@@ -89,7 +108,7 @@ final class ChatStore {
         defer { busy = false }
         staged = []
         // Said over her, while she was still speaking: she is told so.
-        let interrupted = voice.stop() || spokeOver
+        let interrupted = audio.stop() || spokeOver
 
         entries.append(Entry(id: UUID().uuidString, kind: .me, text: text, attachmentNames: files.map(\.name)))
         let waitID = UUID().uuidString
@@ -107,7 +126,7 @@ final class ChatStore {
         guard !busy, let last = lastReply else { return }
         busy = true
         defer { busy = false }
-        voice.stop()
+        audio.stop()
         if let i = entries.firstIndex(where: { $0.id == last.id }) {
             entries[i].text = ""
             entries[i].waiting = true
@@ -158,15 +177,20 @@ final class ChatStore {
         guard let i = entries.firstIndex(where: { $0.id == id }) else { return }
         if let failure {
             entries[i] = Entry(id: id, kind: .system, text: failure)
+            if let talk { act(talk.replied(now, willSpeak: false)) }
             return
         }
         let final = (reply ?? said).trimmingCharacters(in: .whitespacesAndNewlines)
         if final.isEmpty {
             entries[i] = Entry(id: id, kind: .system, text: ignored ? "Seen. She is not answering that." : "She had nothing to say.")
+            if let talk { act(talk.replied(now, willSpeak: false)) }
             return
         }
         entries[i].text = final
         entries[i].waiting = false
+        // By voice, she is now speaking until her line ends; if the voice
+        // never starts, speak() hands the turn back.
+        if let talk { act(talk.replied(now, willSpeak: true)) }
         // Her face and voice cost round trips of their own; the composer does
         // not wait for them.
         Task { await react(to: final) }
@@ -196,10 +220,14 @@ final class ChatStore {
         var body: [String: JSONValue] = ["text": .string(text)]
         if let emotion { body["emotion"] = .string(emotion) }
         // 503 when her voice is switched off for the web: the right amount of fuss is none.
-        guard let audio = try? await client.bytes("/api/speak", post: body) else { return }
-        voice.play(audio)
-        // Looking at them for as long as the line runs.
-        stage.attend("talking", ms: Int(voice.remaining * 1000) + 500)
+        let audioBytes = try? await client.bytes("/api/speak", post: body)
+        let started = audioBytes.map { audio.play($0) } ?? false
+        if started {
+            // Looking at them for as long as the line runs.
+            stage.attend("talking", ms: Int(audio.remaining * 1000) + 500)
+        } else if let talk {
+            act(talk.spokeEnd(now))
+        }
     }
 
     // MARK: Thumbs
@@ -239,7 +267,7 @@ final class ChatStore {
         }
     }
 
-    // MARK: Files and the microphone
+    // MARK: Files
 
     func attach(name: String, data: Data, type: String) async {
         do {
@@ -255,16 +283,92 @@ final class ChatStore {
         let _: Okay? = try? await client.post("/api/attach/discard", ["attachment": file.record])
     }
 
-    /// A WAV recording to words, through her ears on the server.
-    func transcribe(_ wav: Data) async -> String? {
+    // MARK: By voice
+
+    /// Opens the ear. Awake from the start: the tap is already her name. From
+    /// then on she listens for "Haru" or "Hey Haru" and for anything said
+    /// while she is awake, and speaking over her cuts her off.
+    func startTalking() async {
+        guard talk == nil else { return }
+        guard await Audio.allowed() else {
+            notice = "The microphone is switched off for Haru in Settings."
+            return
+        }
+        do {
+            try audio.listen(true)
+        } catch {
+            notice = "The microphone would not start: \(error.localizedDescription)"
+            return
+        }
+        let talk = Talk()
+        self.talk = talk
+        act(talk.start(now, awake: true))
+        ticker = Timer.scheduledTimer(withTimeInterval: 1, repeats: true) { [weak self] _ in
+            Task { @MainActor in
+                guard let self, let talk = self.talk else { return }
+                self.act(talk.tick(self.now))
+            }
+        }
+    }
+
+    func stopTalking() {
+        guard let talk else { return }
+        act(talk.stop())
+        self.talk = nil
+        ticker?.invalidate()
+        ticker = nil
+        try? audio.listen(false)
+    }
+
+    /// A stretch of their voice, through her ears on the server, then to the
+    /// conversation.
+    private func hear(_ wav: Data) async {
+        guard talk != nil else { return }
         transcribing = true
         defer { transcribing = false }
         do {
             let heard: Heard = try await client.upload("/api/listen", data: wav, type: "audio/wav")
-            return heard.text?.trimmingCharacters(in: .whitespacesAndNewlines)
+            guard let text = heard.text?.trimmingCharacters(in: .whitespacesAndNewlines), !text.isEmpty,
+                  let talk else { return }
+            act(talk.heard(text, now))
+        } catch HaruError.signedOut {
+            session.signedIn = false
         } catch {
-            notice = error.localizedDescription
-            return nil
+            // A missed stretch is not worth a word; the next one comes on its own.
+        }
+    }
+
+    private func act(_ actions: [TalkAction]) {
+        for action in actions {
+            switch action {
+            case .say(let text, let interrupted):
+                Task { await send(text, spokeOver: interrupted) }
+            case .ack:
+                Task { await acknowledge() }
+            case .interrupt:
+                audio.stop()
+            case .off, .asleep, .awake, .speaking:
+                break
+            }
+        }
+        talkState = talk?.state ?? .off
+    }
+
+    /// Her name and nothing else: a word from her, in a mood, and an open ear.
+    private func acknowledge() async {
+        do {
+            let word: WakeWord = try await client.post("/api/wake")
+            guard let line = word.line, !line.isEmpty else {
+                // Nothing to say — no sign they are up, or she said hello not long ago.
+                if let talk { act(talk.spokeEnd(now)) }
+                return
+            }
+            entries.append(Entry(id: UUID().uuidString, kind: .her, text: line))
+            if let e = word.emotion, !e.isEmpty { emotion = e }
+            stage.attend("talking", ms: 2_500)
+            await speak(line, emotion: word.emotion)
+        } catch {
+            if let talk { act(talk.spokeEnd(now)) }
         }
     }
 }
