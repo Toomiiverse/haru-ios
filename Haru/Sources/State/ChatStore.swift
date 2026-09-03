@@ -45,9 +45,13 @@ final class ChatStore {
 
     let session: Session
     let voice = Voice()
+    let stage = Stage()
     private var lastAskedAt = Date.distantPast
 
-    init(session: Session) { self.session = session }
+    init(session: Session) {
+        self.session = session
+        voice.onLevel = { [weak self] level in self?.stage.mouth(level) }
+    }
 
     private var client: HaruClient { session.client }
 
@@ -94,6 +98,7 @@ final class ChatStore {
         var body: [String: JSONValue] = ["text": .string(text)]
         if !files.isEmpty { body["attachments"] = .array(files.map(\.record)) }
         if interrupted { body["interrupted"] = true }
+        stage.attend("thinking", ms: 20_000)
         await run(client.stream("/api/chat/stream", body), into: waitID)
     }
 
@@ -108,6 +113,7 @@ final class ChatStore {
             entries[i].waiting = true
             entries[i].reaction = nil
         }
+        stage.attend("thinking", ms: 20_000)
         await run(client.stream("/api/chat/retry", [:]), into: last.id)
     }
 
@@ -120,6 +126,7 @@ final class ChatStore {
         var reply: String?
         var ignored = false
         var failure: String?
+        var begun = false
         do {
             for try await event in stream {
                 if let error = event.error {
@@ -129,6 +136,11 @@ final class ChatStore {
                     said = ""
                     paint(id, "", waiting: true)
                 } else if let chunk = event.text, !chunk.isEmpty {
+                    if !begun {
+                        // The thinking is over, whatever the mood turns out to be.
+                        begun = true
+                        stage.attend("talking", ms: 2_500)
+                    }
                     said += chunk
                     paint(id, said, waiting: false)
                 } else if event.done == true {
@@ -174,6 +186,9 @@ final class ChatStore {
     func react(to line: String) async {
         let mood: Expression? = try? await client.post("/api/expression", ["text": .string(line)])
         if let e = mood?.emotion, !e.isEmpty { emotion = e }
+        // The server picks the Live2D expression, because only it knows what
+        // this model carries; nil lets her face rest.
+        stage.express(mood?.expression)
         await speak(line, emotion: mood?.emotion)
     }
 
@@ -183,6 +198,8 @@ final class ChatStore {
         // 503 when her voice is switched off for the web: the right amount of fuss is none.
         guard let audio = try? await client.bytes("/api/speak", post: body) else { return }
         voice.play(audio)
+        // Looking at them for as long as the line runs.
+        stage.attend("talking", ms: Int(voice.remaining * 1000) + 500)
     }
 
     // MARK: Thumbs

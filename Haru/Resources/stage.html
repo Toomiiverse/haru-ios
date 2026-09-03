@@ -1,0 +1,159 @@
+<!doctype html>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no">
+<!--
+  Her, on stage: the same pixi + Cubism runtime and the same model the desktop
+  uses, all fetched from her own server behind the login (the app copies its
+  cookie into this web view and loads this page with the server as its base).
+  The app talks to window.haruStage; this page reports back over
+  window.webkit.messageHandlers.stage.
+-->
+<style>
+  html, body { margin:0; height:100%; background:transparent; overflow:hidden; -webkit-user-select:none; -webkit-touch-callout:none; }
+  #stage { position:absolute; inset:0; }
+  #stage canvas { position:absolute; inset:0; width:100%; height:100%; opacity:0; transition:opacity .6s ease; }
+  #stage.alive canvas { opacity:1; }
+</style>
+<div id="stage"></div>
+<script>
+(async () => {
+  const host = document.getElementById('stage');
+  const tell = (message) => { try { window.webkit.messageHandlers.stage.postMessage(message); } catch (e) {} };
+  const script = (src) => new Promise((ok, no) => {
+    const s = document.createElement('script');
+    s.src = src; s.onload = ok; s.onerror = () => no(new Error('could not load ' + src));
+    document.head.appendChild(s);
+  });
+  const get = async (url) => {
+    const r = await fetch(url, { credentials: 'include' });
+    if (!r.ok) throw new Error(url + ' answered ' + r.status);
+    return r.json();
+  };
+  const clamp = (v, lo, hi) => (v < lo ? lo : v > hi ? hi : v);
+  // A number in [0,1) for an integer, the same every time: the beat of the wander.
+  const hashN = (n) => { const x = Math.sin(n * 12.9898 + 78.233) * 43758.5453; return x - Math.floor(x); };
+  const TAU = Math.PI * 2;
+
+  // Until she is up, remember what the app asked for and do it on arrival.
+  const pending = { expression: null };
+  let claim = null, claimUntil = 0;
+  let mouthTarget = 0, mouthUntil = 0;
+  window.haruStage = {
+    express: (name) => { pending.expression = name; },
+    attend: (why, ms) => { claim = why || null; claimUntil = performance.now() + (ms === undefined ? 1500 : ms); },
+    mouth: (open) => { mouthTarget = clamp(Number(open) || 0, 0, 1); mouthUntil = performance.now() + 400; },
+  };
+
+  try {
+    const { entry, pose } = await get('/api/model');
+    if (!entry) throw new Error('no model is imported on the desktop');
+    // Order matters: the plugin reads a global PIXI when it loads, and the
+    // Cubism runtime has to exist before any model is built. noeval replaces
+    // pixi's new Function() shader build so no eval is needed.
+    await script('/lib/pixi.js');
+    await script('/lib/noeval.js');
+    if (window.PIXI && PIXI.install) PIXI.install({});
+    await script('/lib/cubismcore.js');
+    if (!window.Live2DCubismCore) throw new Error('the Live2D runtime did not start');
+    await script('/lib/live2d.js');
+    if (!window.PIXI || !PIXI.live2d) throw new Error('the Live2D plugin did not attach to pixi');
+    try { PIXI.live2d.Live2DModel.registerTicker(PIXI.Ticker); } catch (e) {}
+
+    const canvas = document.createElement('canvas');
+    host.appendChild(canvas);
+    const app = new PIXI.Application({
+      view: canvas, backgroundAlpha: 0, antialias: true,
+      resolution: Math.min(window.devicePixelRatio || 1, 2), autoDensity: true, resizeTo: host,
+    });
+    const model = await PIXI.live2d.Live2DModel.from('/model/' + encodeURIComponent(entry), { autoInteract: false });
+    app.stage.addChild(model);
+
+    // Anchored at the bottom middle and scaled to fit, the way the desktop does
+    // it: a Live2D model's own origin is nowhere useful.
+    const baseWidth = model.width / model.scale.x, baseHeight = model.height / model.scale.y;
+    const fit = () => {
+      const w = app.renderer.screen.width, h = app.renderer.screen.height;
+      if (!baseWidth || !baseHeight || !w || !h) return;
+      model.scale.set(Math.min(w / baseWidth, h / baseHeight) * 0.88);
+      model.anchor.set(0.5, 1);
+      model.position.set(w / 2, h);
+    };
+    fit();
+    new ResizeObserver(fit).observe(host);
+
+    const core = model.internalModel && model.internalModel.coreModel;
+    const setParam = (id, value) => { try { core.setParameterValueById(id, value); } catch (e) {} };
+
+    // Where she looks, in [-1,1] each way. The wander is the phone page's:
+    // beats of about two and a half seconds, most spent looking back to centre,
+    // the rest holding a glance, with a little drift throughout. Over it, in
+    // order: a finger she can see, them typing (down, at the box), her talking
+    // (at them), her thinking (up and away). Each claim expires.
+    let finger = null, fingerAt = 0;
+    const wander = (t) => {
+      const beat = Math.floor(t / 2400);
+      const r = hashN(beat), a = hashN(beat + 1000) * TAU, d = 0.35 + hashN(beat + 2000) * 0.65;
+      const looking = r > 0.45;
+      return {
+        x: clamp((looking ? Math.cos(a) * d : 0) + Math.sin(t / 2300) * 0.06, -1, 1),
+        y: clamp((looking ? Math.sin(a) * d * 0.6 : 0) + Math.sin(t / 3100 + 1) * 0.04, -1, 1),
+      };
+    };
+    const target = (t) => {
+      if (finger && t - fingerAt < 4000) return finger;
+      if (claim && t < claimUntil) {
+        if (claim === 'typing') return { x: 0.15, y: 0.9 };
+        if (claim === 'talking') return { x: 0, y: 0.15 };
+        if (claim === 'thinking') return { x: -0.7, y: -0.8 };
+        return { x: 0, y: 0 };
+      }
+      return wander(t);
+    };
+    const look = () => {
+      const w = app.renderer.screen.width, h = app.renderer.screen.height;
+      const at = target(performance.now());
+      // Her face sits in the upper part of the box; a glance is measured from there.
+      model.focus(w / 2 + at.x * w / 2, h * 0.4 + at.y * h / 2);
+    };
+    setInterval(look, 250);
+    host.addEventListener('pointermove', (e) => {
+      const r = host.getBoundingClientRect();
+      finger = { x: clamp((e.clientX - r.left - r.width / 2) / (r.width / 2), -1, 1), y: clamp((e.clientY - r.top - r.height * 0.4) / (r.height / 2), -1, 1) };
+      fingerAt = performance.now();
+    });
+
+    // Re-applied every frame rather than set once: the model rewrites its own
+    // parameters on each update, so a pose set at load is gone by the next
+    // tick. Added after the model, so it runs after that update and before the
+    // frame is drawn. The mouth rides the same hook, from the app's audio meter.
+    const posed = Object.entries(pose || {});
+    let mouthNow = 0;
+    app.ticker.add(() => {
+      for (const [id, value] of posed) setParam(id, value);
+      const now = performance.now();
+      if (now < mouthUntil) {
+        mouthNow += (mouthTarget - mouthNow) * 0.4;
+        setParam('ParamMouthOpenY', mouthNow);
+      } else {
+        mouthNow = 0;
+      }
+    });
+
+    const manager = model.internalModel && model.internalModel.motionManager && model.internalModel.motionManager.expressionManager;
+    const express = (name) => {
+      try {
+        if (name) model.expression(name);
+        else if (manager && manager.resetExpression) manager.resetExpression();
+      } catch (e) { tell({ event: 'warn', why: String(e && e.message || e) }); }
+    };
+    window.haruStage.express = express;
+    if (pending.expression) express(pending.expression);
+
+    const faces = (model.internalModel && model.internalModel.settings && model.internalModel.settings.expressions || []).length;
+    host.classList.add('alive');
+    tell({ event: 'alive', entry: entry, expressions: faces });
+  } catch (error) {
+    tell({ event: 'failed', why: String(error && error.message || error) });
+  }
+})();
+</script>

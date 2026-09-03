@@ -12,7 +12,7 @@ struct StatusView: View {
                 if let s = standing {
                     Section {
                         HStack(spacing: 14) {
-                            FaceView(emotion: s.face).frame(width: 72, height: 72)
+                            PortraitView().frame(width: 72, height: 72)
                             VStack(alignment: .leading, spacing: 4) {
                                 Text(s.mood).font(.headline)
                                 Text("\(Int(s.daysTalked)) days talked, \(Int(s.knownDays)) known")

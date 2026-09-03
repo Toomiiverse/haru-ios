@@ -3,6 +3,7 @@ import SwiftUI
 import UniformTypeIdentifiers
 
 struct ChatView: View {
+    @Environment(Session.self) private var session
     @Environment(ChatStore.self) private var chat
     @Environment(\.scenePhase) private var phase
     @State private var draft = ""
@@ -11,6 +12,7 @@ struct ChatView: View {
     @State private var showPhotos = false
     @State private var showFiles = false
     @State private var photo: PhotosPickerItem?
+    @State private var stageTall = true
     @FocusState private var typing: Bool
     /// Four minutes: she is being carried around, not watched. Anything faster
     /// reads as pestering, and the spacing on her side would refuse it anyway.
@@ -19,6 +21,8 @@ struct ChatView: View {
     var body: some View {
         NavigationStack {
             VStack(spacing: 0) {
+                stageView
+                Divider()
                 transcript
                 composer
             }
@@ -64,15 +68,38 @@ struct ChatView: View {
         Binding(get: { chat.notice != nil }, set: { if !$0 { chat.notice = nil } })
     }
 
+    // MARK: Her stage
+
+    private var stageView: some View {
+        StageWebView(stage: chat.stage, base: session.client.base)
+            .frame(height: stageTall ? 300 : 150)
+            .frame(maxWidth: .infinity)
+            .background(Color("LaunchBackground"))
+            .overlay(alignment: .bottom) {
+                switch chat.stage.state {
+                case .loading:
+                    ProgressView().padding(.bottom, 8)
+                case .failed(let why):
+                    Text("She is not moving — \(why).")
+                        .font(.footnote)
+                        .foregroundStyle(.secondary)
+                        .multilineTextAlignment(.center)
+                        .padding(.horizontal, 16)
+                        .padding(.bottom, 8)
+                case .alive:
+                    EmptyView()
+                }
+            }
+            .onTapGesture { withAnimation(.easeInOut(duration: 0.25)) { stageTall.toggle() } }
+            .onLongPressGesture { chat.stage.reload() }
+    }
+
     // MARK: Header
 
     private var header: some View {
-        HStack(spacing: 10) {
-            FaceView(emotion: chat.emotion).frame(width: 36, height: 36)
-            VStack(alignment: .leading, spacing: 0) {
-                Text("Haru").font(.headline)
-                Text(state).font(.caption).foregroundStyle(.secondary)
-            }
+        VStack(spacing: 0) {
+            Text("Haru").font(.headline)
+            Text(state).font(.caption).foregroundStyle(.secondary)
         }
     }
 
@@ -128,6 +155,9 @@ struct ChatView: View {
 
                     TextField("Say something", text: $draft, axis: .vertical)
                         .lineLimit(1...6)
+                        .onChange(of: draft) { _, now in
+                            if !now.isEmpty { chat.stage.attend("typing", ms: 1_800) }
+                        }
                         .padding(.horizontal, 12)
                         .padding(.vertical, 8)
                         .background(Color(uiColor: .secondarySystemBackground), in: RoundedRectangle(cornerRadius: 18))

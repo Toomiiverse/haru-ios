@@ -6,9 +6,14 @@ uses (`electron/webserver.ts` in haru-desktop, reached over Tailscale at
 
 What it does:
 
+- **Her, on stage** — the same Live2D model the desktop shows, run by the same
+  pixi + Cubism runtime, all fetched from her server behind the login into a
+  web view above the chat. She looks around, watches you type, looks at you
+  while she talks, and her mouth follows her voice. Tap the stage to shrink or
+  grow it; hold it to reload her.
 - **Chat** — her replies stream in as she writes them, split into the bubbles
-  she would have sent; her face changes with the mood of each line, and she
-  says it out loud through her own voice (`/api/speak`). Thumbs up or down on a
+  she would have sent; her expression changes with the mood of each line, and
+  she says it out loud through her own voice (`/api/speak`). Thumbs up or down on a
   reply, redo her last one, send a photo or a file, or tap the mic and talk
   (recorded as WAV, transcribed by her ears on the server).
 - **Status** — where you stand: mood, bond, meters, patience, grudge, what she
@@ -73,4 +78,5 @@ switch under More → Where you are and name a place "home".
   minutes to hours apart, and not at all in Low Power Mode.
 - **Hands-free talk mode.** The page's voice loop (say her name, she wakes,
   speak over her) is not carried over; the mic here is tap-to-talk.
-- **The Live2D stage.** Her SVG face is shown instead of the animated model.
+- **Wardrobe and poking.** The stage holds the pose the desktop saved, but the
+  wardrobe is edited on the desktop only, and there are no hit areas to poke.

@@ -24,6 +24,7 @@ targets:
     sources:
       - path: Haru/Sources
       - path: Haru/Assets.xcassets
+      - path: Haru/Resources
     info:
       path: Haru/Info.plist
       properties:
