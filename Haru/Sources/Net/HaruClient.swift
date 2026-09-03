@@ -88,8 +88,8 @@ struct HaruClient: Sendable {
     }
 
     /// Bytes back rather than JSON: her voice, her face, her portrait.
-    func bytes(_ path: String, post body: [String: JSONValue]? = nil) async throws -> Data {
-        var req = request(path, method: body == nil ? "GET" : "POST")
+    func bytes(_ path: String, post body: [String: JSONValue]? = nil, query: [String: String] = [:]) async throws -> Data {
+        var req = request(path, method: body == nil ? "GET" : "POST", query: query)
         req.setValue("*/*", forHTTPHeaderField: "Accept")
         if let body {
             req.setValue("application/json", forHTTPHeaderField: "Content-Type")

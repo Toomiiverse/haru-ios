@@ -172,9 +172,13 @@ final class ChatStore {
                     // Short ones ride with the next, so "Fine." is not a line of its own.
                     var cursor = spoken
                     while let end = Self.sentenceEnd(in: said, after: cursor) {
-                        let piece = String(said.dropFirst(spoken).prefix(end - spoken)).trimmingCharacters(in: .whitespacesAndNewlines)
+                        let raw = String(said.dropFirst(spoken).prefix(end - spoken))
+                        let piece = raw.trimmingCharacters(in: .whitespacesAndNewlines)
                         cursor = end
                         if piece.count >= 40 {
+                            // A new paragraph is where she breathes: one of her
+                            // recorded sighs goes in the gap, as it does at the desk.
+                            if spoken > 0, raw.hasPrefix("\n") || said.dropFirst(max(0, spoken - 2)).prefix(2) == "\n\n" { sigh() }
                             say(piece, emotion: nil)
                             spoken = end
                         }
@@ -210,7 +214,12 @@ final class ChatStore {
         if let talk { act(talk.replied(now, willSpeak: true)) }
         // The rest of it, and her face for the whole. Neither is waited for.
         let rest = String(final.dropFirst(min(spoken, final.count))).trimmingCharacters(in: .whitespacesAndNewlines)
-        if !rest.isEmpty { say(rest, emotion: nil) } else { drain() }
+        if !rest.isEmpty {
+            if spoken > 0, String(final.dropFirst(min(spoken, final.count))).hasPrefix("\n") { sigh() }
+            say(rest, emotion: nil)
+        } else {
+            drain()
+        }
         Task { await express(final) }
         // The reply's id — what a thumb or a retry needs — only exists on the
         // server. A quiet reload picks it up, and anything she added since.
@@ -262,6 +271,16 @@ final class ChatStore {
         let client = self.client
         // 503 when her voice is switched off for the web: the right amount of fuss is none.
         lines.append(Task { try? await client.bytes("/api/speak", post: body) })
+        if !draining && !audio.speaking { drain() }
+    }
+
+    /// One of her recorded sighs or grunts, in her current mood, for the gap
+    /// between two paragraphs. Fetched like a line and played in its turn; a
+    /// 404 (she has none for that) simply plays nothing.
+    func sigh() {
+        let client = self.client
+        let mood = emotion
+        lines.append(Task { try? await client.bytes("/api/sigh", query: ["emotion": mood]) })
         if !draining && !audio.speaking { drain() }
     }
 
