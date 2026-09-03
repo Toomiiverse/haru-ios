@@ -2,6 +2,7 @@ import SwiftUI
 
 @main
 struct HaruApp: App {
+    @UIApplicationDelegateAdaptor(PushDelegate.self) private var pushDelegate
     @Environment(\.scenePhase) private var phase
     @State private var session: Session
     @State private var chat: ChatStore
@@ -29,7 +30,10 @@ struct HaruApp: App {
         .onChange(of: phase) { _, now in
             switch now {
             case .background: Refresh.schedule()
-            case .active: locator.wake()
+            case .active:
+                locator.wake()
+                Push.register()
+                Task { await Push.sync(session) }
             default: break
             }
         }

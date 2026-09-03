@@ -17,6 +17,41 @@ xcodebuild -version
 command -v xcodegen >/dev/null || brew install xcodegen
 xcodegen generate
 
+# Signed, and straight to TestFlight, when the App Store Connect key is in the
+# environment (the workflow passes the repository secrets ASC_KEY_ID,
+# ASC_ISSUER_ID, ASC_KEY_P8 and APPLE_TEAM_ID). Xcode's cloud signing makes
+# the distribution certificate and profile itself from that key — the whole
+# point, in a household with no Mac to make them on. Without the key, the
+# unsigned build below, as before.
+if [ -n "${ASC_KEY_ID:-}" ] && [ -n "${ASC_ISSUER_ID:-}" ] && [ -n "${ASC_KEY_P8:-}" ] && [ -n "${APPLE_TEAM_ID:-}" ]; then
+  mkdir -p ~/private_keys
+  key=~/private_keys/AuthKey_${ASC_KEY_ID}.p8
+  # The secret may be pasted raw or base64; either way it ends up as the .p8.
+  if printf '%s' "$ASC_KEY_P8" | grep -q "BEGIN PRIVATE KEY"; then printf '%s\n' "$ASC_KEY_P8" > "$key"; else printf '%s' "$ASC_KEY_P8" | base64 --decode > "$key"; fi
+  build_number="${GITHUB_RUN_NUMBER:-1}"
+  auth=(-allowProvisioningUpdates -authenticationKeyPath "$key" -authenticationKeyID "$ASC_KEY_ID" -authenticationKeyIssuerID "$ASC_ISSUER_ID")
+  xcodebuild \
+    -project Haru.xcodeproj -scheme Haru -configuration Release \
+    -sdk iphoneos -destination 'generic/platform=iOS' \
+    -archivePath build/Haru.xcarchive archive \
+    "${auth[@]}" DEVELOPMENT_TEAM="$APPLE_TEAM_ID" CURRENT_PROJECT_VERSION="$build_number" \
+    -quiet
+  cat > build/ExportOptions.plist <<PLIST
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0"><dict>
+  <key>method</key><string>app-store-connect</string>
+  <key>destination</key><string>upload</string>
+  <key>signingStyle</key><string>automatic</string>
+  <key>teamID</key><string>${APPLE_TEAM_ID}</string>
+  <key>uploadSymbols</key><true/>
+  <key>manageAppVersionAndBuildNumber</key><false/>
+</dict></plist>
+PLIST
+  xcodebuild -exportArchive -archivePath build/Haru.xcarchive -exportOptionsPlist build/ExportOptions.plist -exportPath build/export "${auth[@]}"
+  echo "Uploaded build $build_number to App Store Connect — it appears in TestFlight once Apple has processed it."
+  exit 0
+fi
 xcodebuild \
   -project Haru.xcodeproj -scheme Haru -configuration Release \
   -sdk iphoneos -destination 'generic/platform=iOS' \
