@@ -216,9 +216,10 @@ struct ChatView: View {
     }
 
     private var talkLabel: String {
+        let echo = chat.audio.echoCancelled ? "" : " · no echo cancelling"
         switch chat.talkState {
-        case .asleep: return "Say “Hey Haru”"
-        case .awake: return "Listening…"
+        case .asleep: return "Say “Hey Haru”" + echo
+        case .awake: return "Listening…" + echo
         case .thinking: return "Thinking…"
         case .speaking: return "Speaking… talk over her to cut in"
         case .off: return ""

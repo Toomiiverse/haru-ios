@@ -51,14 +51,14 @@ final class ChatStore {
     private var talk: Talk?
     private var ticker: Timer?
     private var lastAskedAt = Date.distantPast
+    /// Her lines being fetched, in the order she will say them.
+    private var lines: [Task<Data?, Never>] = []
+    private var draining = false
 
     init(session: Session) {
         self.session = session
         audio.onLevel = { [weak self] level in self?.stage.mouth(level) }
-        audio.onFinished = { [weak self] in
-            guard let self, let talk = self.talk else { return }
-            self.act(talk.spokeEnd(self.now))
-        }
+        audio.onFinished = { [weak self] in self?.drain() }
         audio.onVoiceStart = { [weak self] in
             guard let self, let talk = self.talk else { return }
             self.act(talk.voiceStarted(self.now))
@@ -108,7 +108,7 @@ final class ChatStore {
         defer { busy = false }
         staged = []
         // Said over her, while she was still speaking: she is told so.
-        let interrupted = audio.stop() || spokeOver
+        let interrupted = hush() || spokeOver
 
         entries.append(Entry(id: UUID().uuidString, kind: .me, text: text, attachmentNames: files.map(\.name)))
         let waitID = UUID().uuidString
@@ -126,7 +126,7 @@ final class ChatStore {
         guard !busy, let last = lastReply else { return }
         busy = true
         defer { busy = false }
-        audio.stop()
+        hush()
         if let i = entries.firstIndex(where: { $0.id == last.id }) {
             entries[i].text = ""
             entries[i].waiting = true
@@ -146,13 +146,18 @@ final class ChatStore {
         var ignored = false
         var failure: String?
         var begun = false
+        // How much of what is on screen she has already been given to say.
+        var spoken = 0
         do {
             for try await event in stream {
                 if let error = event.error {
                     failure = error
                 } else if event.text == "\u{FFFD}" {
-                    // The round was thrown away; back to waiting.
+                    // The round was thrown away; back to waiting, and whatever
+                    // she had started saying of it goes too.
                     said = ""
+                    spoken = 0
+                    hush()
                     paint(id, "", waiting: true)
                 } else if let chunk = event.text, !chunk.isEmpty {
                     if !begun {
@@ -162,6 +167,18 @@ final class ChatStore {
                     }
                     said += chunk
                     paint(id, said, waiting: false)
+                    // A sentence that has ended is a sentence she can start
+                    // saying while the rest is still being written.
+                    // Short ones ride with the next, so "Fine." is not a line of its own.
+                    var cursor = spoken
+                    while let end = Self.sentenceEnd(in: said, after: cursor) {
+                        let piece = String(said.dropFirst(spoken).prefix(end - spoken)).trimmingCharacters(in: .whitespacesAndNewlines)
+                        cursor = end
+                        if piece.count >= 25 {
+                            say(piece, emotion: nil)
+                            spoken = end
+                        }
+                    }
                 } else if event.done == true {
                     reply = event.reply
                     ignored = event.ignored ?? false
@@ -188,12 +205,13 @@ final class ChatStore {
         }
         entries[i].text = final
         entries[i].waiting = false
-        // By voice, she is now speaking until her line ends; if the voice
-        // never starts, speak() hands the turn back.
+        // By voice, she is now speaking until her last line ends; if no voice
+        // ever starts, the queue hands the turn back on its own.
         if let talk { act(talk.replied(now, willSpeak: true)) }
-        // Her face and voice cost round trips of their own; the composer does
-        // not wait for them.
-        Task { await react(to: final) }
+        // The rest of it, and her face for the whole. Neither is waited for.
+        let rest = String(final.dropFirst(min(spoken, final.count))).trimmingCharacters(in: .whitespacesAndNewlines)
+        if !rest.isEmpty { say(rest, emotion: nil) } else { drain() }
+        Task { await express(final) }
         // The reply's id — what a thumb or a retry needs — only exists on the
         // server. A quiet reload picks it up, and anything she added since.
         await load()
@@ -205,29 +223,72 @@ final class ChatStore {
         entries[i].waiting = waiting
     }
 
-    /// What her face does and how she sounds saying a line — asked for after the
-    /// words are on screen, the way the phone page does it.
+    /// A line she said on her own — a nudge, a comeback: her face and her
+    /// voice, both at once. Neither waits for the other.
     func react(to line: String) async {
-        let mood: Expression? = try? await client.post("/api/expression", ["text": .string(line)])
-        if let e = mood?.emotion, !e.isEmpty { emotion = e }
-        // The server picks the Live2D expression, because only it knows what
-        // this model carries; nil lets her face rest.
-        stage.express(mood?.expression)
-        await speak(line, emotion: mood?.emotion)
+        say(line, emotion: nil)
+        await express(line)
     }
 
-    func speak(_ text: String, emotion: String?) async {
+    /// What her face does about a line: a round trip to a model, so it lands
+    /// when it lands. The server picks the Live2D expression, because only it
+    /// knows what this model carries; nil lets her face rest.
+    func express(_ line: String) async {
+        let mood: Expression? = try? await client.post("/api/expression", ["text": .string(line)])
+        if let e = mood?.emotion, !e.isEmpty { emotion = e }
+        stage.express(mood?.expression)
+    }
+
+    /// Where a sentence ends after `start`, as a character offset into `text`,
+    /// or nil when none has ended yet.
+    static func sentenceEnd(in text: String, after start: Int) -> Int? {
+        let rest = text.dropFirst(start)
+        guard let hit = rest.range(of: #"[.!?…]+["”’)\]]*(?=\s)"#, options: .regularExpression) else { return nil }
+        return start + rest.distance(from: rest.startIndex, to: hit.upperBound)
+    }
+
+    // MARK: Her voice, in order
+
+    /// Queues a line for her to say. Fetching starts at once, in order; each
+    /// line plays when the one before it ends.
+    func say(_ text: String, emotion: String?) {
         var body: [String: JSONValue] = ["text": .string(text)]
         if let emotion { body["emotion"] = .string(emotion) }
+        let client = self.client
         // 503 when her voice is switched off for the web: the right amount of fuss is none.
-        let audioBytes = try? await client.bytes("/api/speak", post: body)
-        let started = audioBytes.map { audio.play($0) } ?? false
-        if started {
-            // Looking at them for as long as the line runs.
-            stage.attend("talking", ms: Int(audio.remaining * 1000) + 500)
-        } else if let talk {
-            act(talk.spokeEnd(now))
+        lines.append(Task { try? await client.bytes("/api/speak", post: body) })
+        if !draining && !audio.speaking { drain() }
+    }
+
+    /// Plays the next fetched line, or, with nothing left, hands the turn back.
+    private func drain() {
+        guard !lines.isEmpty else {
+            draining = false
+            if let talk { act(talk.spokeEnd(now)) }
+            return
         }
+        draining = true
+        let next = lines.removeFirst()
+        Task {
+            let data = await next.value
+            guard draining else { return }
+            if let data, audio.play(data) {
+                // Looking at them for as long as the line runs.
+                stage.attend("talking", ms: Int(audio.remaining * 1000) + 500)
+            } else {
+                drain()
+            }
+        }
+    }
+
+    /// Stops her mid-line and forgets what she was about to say. Returns
+    /// whether she was actually talking.
+    @discardableResult
+    private func hush() -> Bool {
+        for line in lines { line.cancel() }
+        lines = []
+        draining = false
+        return audio.stop()
     }
 
     // MARK: Thumbs
@@ -346,7 +407,7 @@ final class ChatStore {
             case .ack:
                 Task { await acknowledge() }
             case .interrupt:
-                audio.stop()
+                hush()
             case .off, .asleep, .awake, .speaking:
                 break
             }
@@ -366,7 +427,7 @@ final class ChatStore {
             entries.append(Entry(id: UUID().uuidString, kind: .her, text: line))
             if let e = word.emotion, !e.isEmpty { emotion = e }
             stage.attend("talking", ms: 2_500)
-            await speak(line, emotion: word.emotion)
+            say(line, emotion: word.emotion)
         } catch {
             if let talk { act(talk.spokeEnd(now)) }
         }

@@ -10,6 +10,9 @@ import Observation
 final class Audio {
     private(set) var speaking = false
     private(set) var listening = false
+    /// Whether Apple's voice processing took: without it her own voice comes
+    /// back through the microphone and the detector takes it for theirs.
+    private(set) var echoCancelled = false
     /// The room, 0–1, while listening; for the level bar.
     private(set) var level: Double = 0
     /// How loud she is, 0–1, while she talks; a 0 when she stops. Her mouth.
@@ -80,7 +83,7 @@ final class Audio {
             installMouthTap()
             player.play()
             speaking = true
-            ear.herTurn = true
+            ear.herTurn(true)
             return true
         } catch {
             speaking = false
@@ -105,7 +108,7 @@ final class Audio {
     private func finished(_ token: Int) {
         guard token == playToken, speaking else { return }
         speaking = false
-        ear.herTurn = false
+        ear.herTurn(false)
         removeMouthTap()
         onLevel?(0)
         onFinished?()
@@ -115,7 +118,7 @@ final class Audio {
         playToken += 1
         if player.isPlaying { player.stop() }
         speaking = false
-        ear.herTurn = false
+        ear.herTurn(false)
         removeMouthTap()
         onLevel?(0)
     }
@@ -153,15 +156,18 @@ final class Audio {
 
     func listen(_ on: Bool) throws {
         guard on != listening else { return }
-        let input = engine.inputNode
         let wasSpeaking = speaking
         // Voice processing can only be switched with the engine stopped, which
         // cuts whatever she was saying.
         stopPlayback()
         engine.stop()
         if on {
+            // The session first, then the input node: voice processing is built
+            // for the mode the session is in when the node comes to exist.
             Self.configureSession(listening: true)
-            try? input.setVoiceProcessingEnabled(true)
+            let input = engine.inputNode
+            do { try input.setVoiceProcessingEnabled(true) } catch { echoCancelled = false }
+            echoCancelled = input.isVoiceProcessingEnabled
             let format = input.outputFormat(forBus: 0)
             ear.reset(sampleRate: format.sampleRate)
             input.removeTap(onBus: 0)
@@ -174,8 +180,10 @@ final class Audio {
             try engine.start()
             listening = true
         } else {
+            let input = engine.inputNode
             input.removeTap(onBus: 0)
             try? input.setVoiceProcessingEnabled(false)
+            echoCancelled = false
             Self.configureSession(listening: false)
             listening = false
             level = 0
@@ -210,9 +218,17 @@ final class Ear: @unchecked Sendable {
         let segment: Data?
     }
 
-    /// Set while she is talking; the detector then wants a much louder room
-    /// before it believes anyone else is. A flag, read racily on purpose.
-    var herTurn = false
+    /// While she is talking, and for half a second after: the detector then
+    /// wants a much louder and longer sound before it believes anyone else is
+    /// speaking. Read racily on the audio thread, on purpose.
+    private var herTurnUntil = 0.0
+    private var herTurnNow = false
+    func herTurn(_ on: Bool) {
+        let t = ProcessInfo.processInfo.systemUptime * 1000
+        herTurnNow = on
+        if !on { herTurnUntil = t + 500 }
+    }
+    private func hers(_ t: Double) -> Bool { herTurnNow || t < herTurnUntil }
 
     private let lock = NSLock()
     private var vad = Vad()
@@ -225,6 +241,9 @@ final class Ear: @unchecked Sendable {
         defer { lock.unlock() }
         self.sampleRate = sampleRate
         vad = Vad()
+        // Six hundred milliseconds of quiet ends what they said: a beat shorter
+        // than the page's, because every one of them is waited through.
+        vad.endAfterMs = 600
         ring = []
         ringSamples = 0
     }
@@ -249,7 +268,12 @@ final class Ear: @unchecked Sendable {
         }
         var started = false
         var segment: Data?
-        if let event = vad.feed(level: level, t: t, ratio: herTurn ? 7 : nil) {
+        // Over her: seven times the room's floor and never under 0.03, held
+        // for a quarter of a second — an echo that slipped past cancellation
+        // is quieter and shorter than somebody actually talking over her.
+        let over = hers(t)
+        vad.startAfterMs = over ? 260 : 90
+        if let event = vad.feed(level: level, t: t, ratio: over ? 7 : nil, least: over ? 0.03 : nil) {
             switch event.kind {
             case .start:
                 started = true

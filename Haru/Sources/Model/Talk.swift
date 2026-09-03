@@ -51,12 +51,12 @@ final class Vad {
     private var startedAt = 0.0
     private var lastLoud = 0.0
 
-    func threshold(_ ratio: Double? = nil) -> Double { max(floorMin, floor * (ratio ?? self.ratio)) }
+    func threshold(_ ratio: Double? = nil, least: Double? = nil) -> Double { max(least ?? floorMin, floorMin, floor * (ratio ?? self.ratio)) }
     var speaking: Bool { state == .speech }
     func reset() { state = .quiet }
 
-    func feed(level: Double, t: Double, ratio: Double? = nil) -> VadEvent? {
-        let loud = level > threshold(ratio)
+    func feed(level: Double, t: Double, ratio: Double? = nil, least: Double? = nil) -> VadEvent? {
+        let loud = level > threshold(ratio, least: least)
         switch state {
         case .quiet:
             floor = level < floor ? floor * 0.7 + level * 0.3 : floor + (level - floor) * 0.02
