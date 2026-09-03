@@ -41,7 +41,7 @@ VPN & Device Management.
 
 ### Without a Mac
 
-`.github/workflows/ios.yml` builds an unsigned `.ipa` on GitHub's macOS runner
+`.github/workflows/ios.yml` runs `scripts/build-ipa.sh`, which builds an unsigned `.ipa` on GitHub's macOS runner
 on every push to `main` (or by hand: Actions → iOS build → Run workflow).
 Download the `Haru-unsigned-ipa` artifact from the run, then sign and install
 it from the Windows PC with [Sideloadly](https://sideloadly.io) — plug the
