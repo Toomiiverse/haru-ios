@@ -174,7 +174,7 @@ final class ChatStore {
                     while let end = Self.sentenceEnd(in: said, after: cursor) {
                         let piece = String(said.dropFirst(spoken).prefix(end - spoken)).trimmingCharacters(in: .whitespacesAndNewlines)
                         cursor = end
-                        if piece.count >= 25 {
+                        if piece.count >= 40 {
                             say(piece, emotion: nil)
                             spoken = end
                         }
@@ -242,10 +242,13 @@ final class ChatStore {
     }
 
     /// Where a sentence ends after `start`, as a character offset into `text`,
-    /// or nil when none has ended yet.
+    /// or nil when none has ended yet. A full stop, question or exclamation
+    /// mark followed by a capital (or a new paragraph) — never an ellipsis or a
+    /// "Hmm." that runs on in lower case: those are her pauses, and cutting a
+    /// clip there made a breath into a splice.
     static func sentenceEnd(in text: String, after start: Int) -> Int? {
         let rest = text.dropFirst(start)
-        guard let hit = rest.range(of: #"[.!?…]+["”’)\]]*(?=\s)"#, options: .regularExpression) else { return nil }
+        guard let hit = rest.range(of: #"[.!?]+["”’)\]]*(?=\s+(?:[A-Z"“‘(\[]|\n)|\n)"#, options: .regularExpression) else { return nil }
         return start + rest.distance(from: rest.startIndex, to: hit.upperBound)
     }
 
