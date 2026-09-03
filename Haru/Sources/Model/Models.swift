@@ -132,7 +132,7 @@ struct Adventure: Decodable, Identifiable {
     let at: String
     let about: String
     let why: String
-    let note: String
+    let note: String?
     let sources: [String]?
     var id: String { at + "|" + about }
 }
@@ -171,27 +171,15 @@ struct AgendaPage: Decodable { let items: [AgendaItem] }
 
 // MARK: Whereabouts
 
-struct Spot: Decodable {
-    let lat: Double
-    let lon: Double
-    let accuracy: Double
-    let at: String
-    let net: String
-}
-
-struct Place: Decodable, Identifiable {
-    let name: String
-    let lat: Double
-    let lon: Double
-    let radiusM: Double
-    let added: String
-    var id: String { name }
-}
-
+/// What the server tells a page about where they are: never coordinates. The
+/// phone holds those; this is a place name if the last fix landed in one,
+/// whether that fix is recent, the network it came over, and the named places.
 struct Whereabouts: Decodable {
     let enabled: Bool
-    let last: Spot?
-    let places: [Place]
+    let at: String?
+    let fresh: Bool
+    let net: String?
+    let places: [String]
 }
 
 // MARK: Push preferences

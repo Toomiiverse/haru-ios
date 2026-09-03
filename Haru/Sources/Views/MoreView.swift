@@ -115,6 +115,13 @@ struct MoreView: View {
 
     // MARK: Whereabouts
 
+    private func whereLine(_ state: Whereabouts) -> String {
+        guard state.fresh || locator.reported else { return "No fix sent yet." }
+        let place = state.at.map { "at \($0)" } ?? "somewhere unnamed"
+        let net = state.net.map { ", on \($0)" } ?? ""
+        return place + net
+    }
+
     private var whereabouts: some View {
         Section {
             Toggle("Let her know where you are", isOn: Binding(
@@ -123,11 +130,7 @@ struct MoreView: View {
             ))
             .disabled(locator.state == nil)
             if let state = locator.state, state.enabled {
-                if let last = state.last {
-                    LabeledContent("Last fix", value: "within \(Int(last.accuracy)) m, on \(last.net)")
-                } else {
-                    Text("No fix sent yet.").foregroundStyle(.secondary)
-                }
+                LabeledContent("Right now", value: whereLine(state))
                 HStack {
                     TextField("Name this place (home, work…)", text: $placeName)
                     Button("Name") {
@@ -135,16 +138,16 @@ struct MoreView: View {
                         placeName = ""
                         Task { await locator.name(name) }
                     }
-                    .disabled(placeName.trimmingCharacters(in: .whitespaces).isEmpty || state.last == nil)
+                    .disabled(placeName.trimmingCharacters(in: .whitespaces).isEmpty || !(locator.reported || state.fresh))
                 }
                 Button("Look up what this place is called") {
                     Task { if let found = await locator.lookUp(), !found.isEmpty { placeName = found } }
                 }
-                .disabled(state.last == nil)
-                ForEach(state.places) { place in
-                    LabeledContent(place.name, value: "\(Int(place.radiusM)) m")
+                .disabled(!(locator.reported || state.fresh))
+                ForEach(state.places, id: \.self) { place in
+                    Text(place)
                         .swipeActions {
-                            Button("Forget", role: .destructive) { Task { await locator.forget(place.name) } }
+                            Button("Forget", role: .destructive) { Task { await locator.forget(place) } }
                         }
                 }
             }

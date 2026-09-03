@@ -9,6 +9,8 @@ final class Locator: NSObject, CLLocationManagerDelegate {
     var state: Whereabouts?
     var problem: String?
     private(set) var authorised = false
+    /// A fix has gone up since the app opened, so a place can be named.
+    private(set) var reported = false
 
     private let session: Session
     private let manager = CLLocationManager()
@@ -85,6 +87,7 @@ final class Locator: NSObject, CLLocationManagerDelegate {
         ]
         do {
             state = try await client.post("/api/where", body)
+            reported = true
         } catch HaruError.server(let code, _) where code == 409 {
             // Sharing was switched off on the other side; stop asking.
             await load()

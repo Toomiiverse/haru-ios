@@ -57,7 +57,7 @@ struct HerView: View {
                                         Text(night.day).font(.footnote).foregroundStyle(.secondary)
                                     }
                                     Text(night.why).font(.footnote).foregroundStyle(.secondary)
-                                    if !night.note.isEmpty { Text(night.note).font(.subheadline) }
+                                    if let note = night.note, !note.isEmpty { Text(note).font(.subheadline) }
                                     ForEach(night.sources ?? [], id: \.self) { source in
                                         if let url = URL(string: source), url.scheme?.hasPrefix("http") == true {
                                             Link(source, destination: url).font(.footnote).lineLimit(1)
