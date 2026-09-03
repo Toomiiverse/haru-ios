@@ -148,6 +148,11 @@ final class ChatStore {
         var begun = false
         // How much of what is on screen she has already been given to say.
         var spoken = 0
+        // The first line goes out as soon as one sentence has ended, for the
+        // sake of her first word; after that, whole paragraphs or a good run
+        // of sentences — one take per stretch keeps her timbre steady, where a
+        // take per sentence made her sound assembled.
+        var firstLineOut = false
         do {
             for try await event in stream {
                 if let error = event.error {
@@ -175,12 +180,17 @@ final class ChatStore {
                         let raw = String(said.dropFirst(spoken).prefix(end - spoken))
                         let piece = raw.trimmingCharacters(in: .whitespacesAndNewlines)
                         cursor = end
-                        if piece.count >= 40 {
+                        let paragraphEnds = said.dropFirst(end).hasPrefix("\n")
+                        let enough = piece.count >= (firstLineOut ? 160 : 40)
+                        if piece.count >= 40 && (enough || paragraphEnds) {
                             // A new paragraph is where she breathes: one of her
                             // recorded sighs goes in the gap, as it does at the desk.
                             if spoken > 0, raw.hasPrefix("\n") || said.dropFirst(max(0, spoken - 2)).prefix(2) == "\n\n" { sigh() }
-                            say(piece, emotion: nil)
+                            // In the mood she is in — the new one lands after
+                            // the words, and the lines after it take it up.
+                            say(piece, emotion: emotion)
                             spoken = end
+                            firstLineOut = true
                         }
                     }
                 } else if event.done == true {
@@ -216,7 +226,7 @@ final class ChatStore {
         let rest = String(final.dropFirst(min(spoken, final.count))).trimmingCharacters(in: .whitespacesAndNewlines)
         if !rest.isEmpty {
             if spoken > 0, String(final.dropFirst(min(spoken, final.count))).hasPrefix("\n") { sigh() }
-            say(rest, emotion: nil)
+            say(rest, emotion: emotion)
         } else {
             drain()
         }
@@ -235,7 +245,7 @@ final class ChatStore {
     /// A line she said on her own — a nudge, a comeback: her face and her
     /// voice, both at once. Neither waits for the other.
     func react(to line: String) async {
-        say(line, emotion: nil)
+        say(line, emotion: emotion)
         await express(line)
     }
 
