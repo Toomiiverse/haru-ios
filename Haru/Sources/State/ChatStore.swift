@@ -231,12 +231,14 @@ final class ChatStore {
     }
 
     /// What her face does about a line: a round trip to a model, so it lands
-    /// when it lands. The server picks the Live2D expression, because only it
-    /// knows what this model carries; nil lets her face rest.
+    /// when it lands. The mood word is what the stage's SVG faces are keyed
+    /// by, the same way the phone page keys them.
     func express(_ line: String) async {
         let mood: Expression? = try? await client.post("/api/expression", ["text": .string(line)])
-        if let e = mood?.emotion, !e.isEmpty { emotion = e }
-        stage.express(mood?.expression)
+        if let e = mood?.emotion, !e.isEmpty {
+            emotion = e
+            stage.express(e)
+        }
     }
 
     /// Where a sentence ends after `start`, as a character offset into `text`,
@@ -425,7 +427,10 @@ final class ChatStore {
                 return
             }
             entries.append(Entry(id: UUID().uuidString, kind: .her, text: line))
-            if let e = word.emotion, !e.isEmpty { emotion = e }
+            if let e = word.emotion, !e.isEmpty {
+                emotion = e
+                stage.express(e)
+            }
             stage.attend("talking", ms: 2_500)
             say(line, emotion: word.emotion)
         } catch {

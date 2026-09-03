@@ -2,12 +2,12 @@ import Observation
 import SwiftUI
 import WebKit
 
-/// Her on stage: a web view running Resources/stage.html, which is the same
-/// pixi + Cubism runtime and model the desktop shows. The page lives at a
-/// scheme of its own (haru-stage://) that the app answers itself, fetching
-/// every file — runtime, manifest, textures, /api/model — from her server
-/// with the app's own login. Nothing about cookies or origins is left to the
-/// web view, and every file is seen going by, so a stall has a name.
+/// Her on stage: a web view running Resources/stage.html, which is the phone
+/// page's own SVG avatar (generated from the desktop code by
+/// scripts/sync-avatar.mjs). The page lives at a scheme of its own
+/// (haru-stage://) that the app answers itself, fetching each face from her
+/// server with the app's own login. Nothing about cookies or origins is left
+/// to the web view, and every file is seen going by, so a stall has a name.
 @MainActor @Observable
 final class Stage: NSObject, WKNavigationDelegate {
     enum State: Equatable {

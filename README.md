@@ -6,11 +6,12 @@ uses (`electron/webserver.ts` in haru-desktop, reached over Tailscale at
 
 What it does:
 
-- **Her, on stage** — the same Live2D model the desktop shows, run by the same
-  pixi + Cubism runtime, all fetched from her server behind the login into a
-  web view above the chat. She looks around, watches you type, looks at you
-  while she talks, and her mouth follows her voice. Tap the stage to shrink or
-  grow it; hold it to reload her.
+- **Her, on stage** — the phone page's own SVG avatar, generated straight from
+  the desktop code (`scripts/sync-avatar.mjs`) so the two never drift: her
+  faces crossfade with her mood, she floats, blinks, glances about, looks
+  down when you type and at you while she talks. Each face is fetched from
+  her server behind the login. Tap the stage to shrink or grow it; hold it to
+  reload her.
 - **Chat** — her replies stream in as she writes them, split into the bubbles
   she would have sent; her expression changes with the mood of each line, and
   she says it out loud through her own voice (`/api/speak`). Thumbs up or down on a
@@ -83,5 +84,6 @@ switch under More → Where you are and name a place "home".
   (a `.p8` key, token-based auth, HTTP/2 to `api.push.apple.com`). Until then
   she relies on background refresh, which iOS runs on its own schedule —
   minutes to hours apart, and not at all in Low Power Mode.
-- **Wardrobe and poking.** The stage holds the pose the desktop saved, but the
-  wardrobe is edited on the desktop only, and there are no hit areas to poke.
+- **The Live2D model.** Her animated model was tried on the stage and set
+  aside: 29 MB over the tailnet and a web renderer on the phone for a face the
+  SVG does in 30 KB. The stage plumbing (`haru-stage://`) would carry it again.

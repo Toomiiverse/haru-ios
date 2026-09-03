@@ -11,9 +11,8 @@ struct ChatView: View {
     @State private var showFiles = false
     @State private var photo: PhotosPickerItem?
     @State private var stageTall = true
-    @AppStorage("stage.zoom") private var stageZoom = 2.0
+    @AppStorage("stage.zoom") private var stageZoom = 1.0
     @AppStorage("stage.lift") private var stageLift = 0.0
-    @AppStorage("stage.motion") private var stageMotion = 0.6
     @FocusState private var typing: Bool
     /// Four minutes: she is being carried around, not watched. Anything faster
     /// reads as pestering, and the spacing on her side would refuse it anyway.
@@ -73,7 +72,7 @@ struct ChatView: View {
 
     private var stageView: some View {
         StageWebView(stage: chat.stage, client: session.client)
-            .frame(height: stageTall ? 300 : 150)
+            .frame(height: stageTall ? 220 : 110)
             .frame(maxWidth: .infinity)
             .background(Color("LaunchBackground"))
             .overlay(alignment: .bottom) {
@@ -100,7 +99,6 @@ struct ChatView: View {
             .onAppear { frameStage() }
             .onChange(of: stageZoom) { _, _ in frameStage() }
             .onChange(of: stageLift) { _, _ in frameStage() }
-            .onChange(of: stageMotion) { _, _ in frameStage() }
             .onChange(of: chat.stage.state) { _, now in
                 if case .alive = now { frameStage() }
             }
@@ -108,7 +106,6 @@ struct ChatView: View {
 
     private func frameStage() {
         chat.stage.frame(zoom: stageZoom, lift: stageLift)
-        chat.stage.motion(stageMotion)
     }
 
     // MARK: Header

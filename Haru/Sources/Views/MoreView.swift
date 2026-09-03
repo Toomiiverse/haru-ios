@@ -12,9 +12,8 @@ struct MoreView: View {
     @State private var prefsLoaded = false
     @State private var placeName = ""
     @State private var problem: String?
-    @AppStorage("stage.zoom") private var stageZoom = 2.0
+    @AppStorage("stage.zoom") private var stageZoom = 1.0
     @AppStorage("stage.lift") private var stageLift = 0.0
-    @AppStorage("stage.motion") private var stageMotion = 0.6
 
     var body: some View {
         NavigationStack {
@@ -69,21 +68,17 @@ struct MoreView: View {
         Section {
             VStack(alignment: .leading, spacing: 2) {
                 Text("Zoom \(stageZoom, specifier: "%.2f")×").font(.footnote).foregroundStyle(.secondary)
-                Slider(value: $stageZoom, in: 1...3, step: 0.05)
+                Slider(value: $stageZoom, in: 0.5...2, step: 0.05)
             }
             VStack(alignment: .leading, spacing: 2) {
                 Text("Position \(stageLift >= 0 ? "up" : "down") \(abs(stageLift), specifier: "%.2f")").font(.footnote).foregroundStyle(.secondary)
                 Slider(value: $stageLift, in: -0.5...0.5, step: 0.01)
             }
-            VStack(alignment: .leading, spacing: 2) {
-                Text("Liveliness \(stageMotion, specifier: "%.2f")").font(.footnote).foregroundStyle(.secondary)
-                Slider(value: $stageMotion, in: 0...1, step: 0.05)
-            }
-            Button("Back to how it was") { stageZoom = 2; stageLift = 0; stageMotion = 0.6 }
+            Button("Back to how it was") { stageZoom = 1; stageLift = 0 }
         } header: {
             Text("Her stage")
         } footer: {
-            Text("Zoom 1 shows all of her, the way the desktop does; 2 shows her top half. Liveliness is how far and how often she looks about.")
+            Text("Her face, the same one the phone page shows. Zoom scales it; position moves it up or down.")
         }
     }
 
