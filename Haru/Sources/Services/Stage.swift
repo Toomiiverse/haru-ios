@@ -1,4 +1,5 @@
 import Observation
+import SwiftUI
 import WebKit
 
 /// Her on stage: a web view running Resources/stage.html against her server,
