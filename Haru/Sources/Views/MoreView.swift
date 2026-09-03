@@ -14,11 +14,13 @@ struct MoreView: View {
     @State private var problem: String?
     @AppStorage("stage.zoom") private var stageZoom = 1.0
     @AppStorage("stage.lift") private var stageLift = 0.0
+    @AppStorage("talk.echoCancel") private var echoCancel = true
 
     var body: some View {
         NavigationStack {
             List {
                 herStage
+                talking
                 notifications
                 whereabouts
                 Section("Her memory") {
@@ -79,6 +81,18 @@ struct MoreView: View {
             Text("Her stage")
         } footer: {
             Text("Her face, the same one the phone page shows. Zoom scales it; position moves it up or down.")
+        }
+    }
+
+    // MARK: Talking
+
+    private var talking: some View {
+        Section {
+            Toggle("Cancel her echo while listening", isOn: $echoCancel)
+        } header: {
+            Text("Talking")
+        } footer: {
+            Text("On, she can't hear herself through the speaker, so you can talk over her; her voice loses a little clarity. Off, she plays back untouched — best on earphones, where there is no echo to cancel. Takes effect the next time you tap the mic.")
         }
     }
 

@@ -45,12 +45,19 @@ final class Audio {
         await AVAudioApplication.requestRecordPermission()
     }
 
+    /// Whether the microphone is run through Apple's voice processing while
+    /// listening. On: her own voice out of the speaker is subtracted from what
+    /// the mic hears, so speaking over her works. Off: she plays back untouched
+    /// — clearer — but on speakerphone she may hear herself; fine on earphones.
+    var echoCancelling = true
+
     /// Play and record through the same session, out of the speaker rather than
-    /// the earpiece. Voice chat mode while listening: that is where the echo
-    /// cancellation lives.
+    /// the earpiece. Video-chat mode while listening: it carries the same echo
+    /// cancellation as voice-chat mode but plays back wideband, where voice-chat
+    /// mode narrowed her to a telephone.
     static func configureSession(listening: Bool) {
         let session = AVAudioSession.sharedInstance()
-        try? session.setCategory(.playAndRecord, mode: listening ? .voiceChat : .default,
+        try? session.setCategory(.playAndRecord, mode: listening ? .videoChat : .default,
                                  options: [.defaultToSpeaker, .allowBluetoothA2DP])
         try? session.setActive(true)
     }
@@ -166,7 +173,7 @@ final class Audio {
             // for the mode the session is in when the node comes to exist.
             Self.configureSession(listening: true)
             let input = engine.inputNode
-            do { try input.setVoiceProcessingEnabled(true) } catch { echoCancelled = false }
+            do { try input.setVoiceProcessingEnabled(echoCancelling) } catch { echoCancelled = false }
             echoCancelled = input.isVoiceProcessingEnabled
             let format = input.outputFormat(forBus: 0)
             ear.reset(sampleRate: format.sampleRate)

@@ -403,6 +403,7 @@ final class ChatStore {
             notice = "The microphone is switched off for Haru in Settings."
             return
         }
+        audio.echoCancelling = UserDefaults.standard.object(forKey: "talk.echoCancel") as? Bool ?? true
         do {
             try audio.listen(true)
         } catch {
