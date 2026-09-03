@@ -51,9 +51,11 @@ final class ChatStore {
     private var talk: Talk?
     private var ticker: Timer?
     private var lastAskedAt = Date.distantPast
-    /// Her lines being fetched, in the order she will say them.
-    private var lines: [Task<Data?, Never>] = []
+    /// Her lines being fetched, in the order she will say them, each with the
+    /// breath (in milliseconds) she takes before it — none before the first.
+    private var lines: [(gap: Int, fetch: Task<Data?, Never>)] = []
     private var draining = false
+    private var spokeSomething = false
 
     init(session: Session) {
         self.session = session
@@ -185,10 +187,11 @@ final class ChatStore {
                         if piece.count >= 40 && (enough || paragraphEnds) {
                             // A new paragraph is where she breathes: one of her
                             // recorded sighs goes in the gap, as it does at the desk.
-                            if spoken > 0, raw.hasPrefix("\n") || said.dropFirst(max(0, spoken - 2)).prefix(2) == "\n\n" { sigh() }
+                            let newParagraph = spoken > 0 && (raw.hasPrefix("\n") || said.dropFirst(max(0, spoken - 2)).prefix(2) == "\n\n")
+                            if newParagraph { sigh() }
                             // In the mood she is in — the new one lands after
                             // the words, and the lines after it take it up.
-                            say(piece, emotion: emotion)
+                            say(piece, emotion: emotion, gap: newParagraph ? 450 : 280)
                             spoken = end
                             firstLineOut = true
                         }
@@ -225,8 +228,9 @@ final class ChatStore {
         // The rest of it, and her face for the whole. Neither is waited for.
         let rest = String(final.dropFirst(min(spoken, final.count))).trimmingCharacters(in: .whitespacesAndNewlines)
         if !rest.isEmpty {
-            if spoken > 0, String(final.dropFirst(min(spoken, final.count))).hasPrefix("\n") { sigh() }
-            say(rest, emotion: emotion)
+            let newParagraph = spoken > 0 && String(final.dropFirst(min(spoken, final.count))).hasPrefix("\n")
+            if newParagraph { sigh() }
+            say(rest, emotion: emotion, gap: newParagraph ? 450 : 280)
         } else {
             drain()
         }
@@ -274,13 +278,15 @@ final class ChatStore {
     // MARK: Her voice, in order
 
     /// Queues a line for her to say. Fetching starts at once, in order; each
-    /// line plays when the one before it ends.
-    func say(_ text: String, emotion: String?) {
+    /// line plays when the one before it ends, after `gap` milliseconds of
+    /// breath — a sentence's worth by default. Two lines run together sound
+    /// like one person reading; a pause between them sounds like one talking.
+    func say(_ text: String, emotion: String?, gap: Int = 280) {
         var body: [String: JSONValue] = ["text": .string(text)]
         if let emotion { body["emotion"] = .string(emotion) }
         let client = self.client
         // 503 when her voice is switched off for the web: the right amount of fuss is none.
-        lines.append(Task { try? await client.bytes("/api/speak", post: body) })
+        lines.append((gap: gap, fetch: Task { try? await client.bytes("/api/speak", post: body) }))
         if !draining && !audio.speaking { drain() }
     }
 
@@ -290,7 +296,7 @@ final class ChatStore {
     func sigh() {
         let client = self.client
         let mood = emotion
-        lines.append(Task { try? await client.bytes("/api/sigh", query: ["emotion": mood]) })
+        lines.append((gap: 350, fetch: Task { try? await client.bytes("/api/sigh", query: ["emotion": mood]) }))
         if !draining && !audio.speaking { drain() }
     }
 
@@ -298,15 +304,22 @@ final class ChatStore {
     private func drain() {
         guard !lines.isEmpty else {
             draining = false
+            spokeSomething = false
             if let talk { act(talk.spokeEnd(now)) }
             return
         }
         draining = true
         let next = lines.removeFirst()
         Task {
-            let data = await next.value
+            let data = await next.fetch.value
             guard draining else { return }
+            // The breath before this line, once something has been said.
+            if spokeSomething, next.gap > 0 {
+                try? await Task.sleep(for: .milliseconds(next.gap))
+                guard draining else { return }
+            }
             if let data, audio.play(data) {
+                spokeSomething = true
                 // Looking at them for as long as the line runs.
                 stage.attend("talking", ms: Int(audio.remaining * 1000) + 500)
             } else {
@@ -319,9 +332,10 @@ final class ChatStore {
     /// whether she was actually talking.
     @discardableResult
     private func hush() -> Bool {
-        for line in lines { line.cancel() }
+        for line in lines { line.fetch.cancel() }
         lines = []
         draining = false
+        spokeSomething = false
         return audio.stop()
     }
 
