@@ -90,6 +90,16 @@ kept on the phone, the same as the page's. The phone must be on the tailnet.
 Then allow notifications and, if you want her to know where you are, flip the
 switch under More → Where you are and name a place "home".
 
+## Siri, Shortcuts, the Action button
+
+Three verbs, with no server side: "Hey Siri, **tell Haru**" (Siri asks what,
+then reads her reply back), "**talk to Haru**" (opens the app with the ear
+on — set the Action button to this Shortcut), and "**how is Haru**" (her mood
+and where you stand, spoken). They appear in the Shortcuts app under Haru, so
+an automation can send her a line when you arrive home, when the car
+connects, or when the charger goes in. The intents run in the app's own
+process with the saved address and cookie; `haru://` links open the screens.
+
 ## Answering from the lock screen
 
 Long-press one of her notifications: every line takes a **Reply** (typed and

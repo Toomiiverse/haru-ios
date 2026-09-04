@@ -58,6 +58,8 @@ struct Staged: Decodable { let attachment: JSONValue }
 struct Okay: Decodable { let ok: Bool? }
 /// For calls whose answer is not needed, only that they went through.
 struct Ignored: Decodable {}
+/// POST /api/chat's answer: her line, or nothing when she let it pass.
+struct Said: Decodable { let reply: String?; let ignored: Bool? }
 struct ServerError: Decodable { let error: String? }
 struct MemoryPage: Decodable { let memories: [String] }
 struct LookedUp: Decodable { let name: String? }
