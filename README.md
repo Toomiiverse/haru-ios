@@ -90,6 +90,19 @@ kept on the phone, the same as the page's. The phone must be on the tailnet.
 Then allow notifications and, if you want her to know where you are, flip the
 switch under More → Where you are and name a place "home".
 
+## Answering from the lock screen
+
+Long-press one of her notifications: every line takes a **Reply** (typed and
+sent without opening the app), and a reminder about a thing on your list
+takes **Done** as well, which ticks it off. Tapping a reminder opens Status;
+tapping anything else opens the chat. The server names the buttons in the
+push payload (`category`, and the item under `haru`); the app's own
+background-refresh notifications carry the same.
+
+The app answers `haru://` links, for Shortcuts, the Action button and Safari:
+`haru://chat`, `haru://talk` (opens the chat and starts listening),
+`haru://status`, `haru://diary`, `haru://her`, `haru://more`.
+
 ## What is not here yet
 
 - **Real push notifications, until the APNs key is installed.** The server

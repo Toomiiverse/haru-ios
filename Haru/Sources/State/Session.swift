@@ -6,8 +6,8 @@ import UIKit
 /// work; this only knows whether the last request was let through.
 @MainActor @Observable
 final class Session {
-    static let defaultBase = "https://haruserver.tail6da04d.ts.net"
-    private static let baseKey = "haru.base"
+    nonisolated static let defaultBase = "https://haruserver.tail6da04d.ts.net"
+    nonisolated private static let baseKey = "haru.base"
 
     private(set) var baseURLString: String
     private(set) var client: HaruClient
@@ -22,10 +22,21 @@ final class Session {
     }
 
     private static func makeClient(_ raw: String) -> HaruClient {
+        HaruClient(base: normalized(raw))
+    }
+
+    nonisolated private static func normalized(_ raw: String) -> URL {
         var trimmed = raw.trimmingCharacters(in: .whitespacesAndNewlines)
         while trimmed.hasSuffix("/") { trimmed.removeLast() }
         if !trimmed.contains("://") { trimmed = "https://" + trimmed }
-        return HaruClient(base: URL(string: trimmed) ?? URL(string: defaultBase)!)
+        return URL(string: trimmed) ?? URL(string: defaultBase)!
+    }
+
+    /// A client for code that runs without a Session — the notification
+    /// delegate answering from the lock screen. Same saved address, same
+    /// cookie jar (HaruClient keeps it in HTTPCookieStorage.shared).
+    nonisolated static func savedClient(quick: Bool = false) -> HaruClient {
+        HaruClient(base: normalized(UserDefaults.standard.string(forKey: baseKey) ?? defaultBase), quick: quick)
     }
 
     func useBase(_ raw: String) {

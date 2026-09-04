@@ -51,11 +51,13 @@ struct StreamEvent: Decodable {
 
 struct Expression: Decodable { let emotion: String?; let expression: String? }
 struct WakeWord: Decodable { let line: String?; let emotion: String? }
-struct Nudge: Decodable { let line: String?; let about: String? }
+struct Nudge: Decodable { let line: String?; let about: String?; let eventId: String? }
 struct Rated: Decodable { let ok: Bool?; let line: String? }
 struct Heard: Decodable { let text: String? }
 struct Staged: Decodable { let attachment: JSONValue }
 struct Okay: Decodable { let ok: Bool? }
+/// For calls whose answer is not needed, only that they went through.
+struct Ignored: Decodable {}
 struct ServerError: Decodable { let error: String? }
 struct MemoryPage: Decodable { let memories: [String] }
 struct LookedUp: Decodable { let name: String? }

@@ -24,6 +24,8 @@ struct HaruApp: App {
                 .environment(session)
                 .environment(chat)
                 .environment(locator)
+                .environment(Navigator.shared)
+                .onOpenURL { Navigator.shared.open($0) }
                 .preferredColorScheme(.dark)
                 .tint(Color("AccentColor"))
         }

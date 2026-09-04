@@ -39,18 +39,25 @@ enum Refresh {
         guard session.signedIn == true else { return true }
         do {
             let nudge: Nudge = try await session.client.get("/api/nudge")
-            if let line = nudge.line, !line.isEmpty { await notify(line) }
+            if let line = nudge.line, !line.isEmpty {
+                await notify(line, kind: nudge.eventId != nil || nudge.about != nil ? "events" : "random", eventId: nudge.eventId)
+            }
             return true
         } catch {
             return false
         }
     }
 
-    static func notify(_ line: String) async {
+    /// The same buttons as a push from the server (Push.swift): reply from the
+    /// lock screen, and "Done" when the line is about a thing on the list.
+    static func notify(_ line: String, kind: String = "random", eventId: String? = nil) async {
         let content = UNMutableNotificationContent()
         content.title = "Haru"
         content.body = line
         content.sound = .default
+        content.categoryIdentifier = (eventId == nil ? Push.Category.line : Push.Category.event).rawValue
+        content.threadIdentifier = "haru-\(kind)"
+        content.userInfo = Push.userInfo(kind: kind, eventId: eventId)
         let request = UNNotificationRequest(identifier: UUID().uuidString, content: content, trigger: nil)
         try? await UNUserNotificationCenter.current().add(request)
     }

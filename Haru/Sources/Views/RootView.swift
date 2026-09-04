@@ -23,18 +23,26 @@ struct RootView: View {
 }
 
 struct MainTabs: View {
+    @Environment(Navigator.self) private var nav
+
     var body: some View {
-        TabView {
+        @Bindable var nav = nav
+        TabView(selection: $nav.tab) {
             ChatView()
                 .tabItem { Label("Chat", systemImage: "bubble.left.and.bubble.right.fill") }
+                .tag(Navigator.Tab.chat)
             StatusView()
                 .tabItem { Label("Status", systemImage: "heart.text.square.fill") }
+                .tag(Navigator.Tab.status)
             DiaryView()
                 .tabItem { Label("Diary", systemImage: "book.closed.fill") }
+                .tag(Navigator.Tab.diary)
             HerView()
                 .tabItem { Label("Her", systemImage: "sparkles") }
+                .tag(Navigator.Tab.her)
             MoreView()
                 .tabItem { Label("More", systemImage: "ellipsis.circle.fill") }
+                .tag(Navigator.Tab.more)
         }
     }
 }

@@ -5,6 +5,7 @@ import UniformTypeIdentifiers
 struct ChatView: View {
     @Environment(Session.self) private var session
     @Environment(ChatStore.self) private var chat
+    @Environment(Navigator.self) private var nav
     @Environment(\.scenePhase) private var phase
     @State private var draft = ""
     @State private var showPhotos = false
@@ -45,6 +46,12 @@ struct ChatView: View {
                 if !chat.busy { await chat.load() }
                 await chat.askIfSheHasSomethingToSay()
             }
+        }
+        // haru://talk — from a Shortcut, the Action button, Safari: open the ear.
+        .onChange(of: nav.wantsTalk, initial: true) { _, wanted in
+            guard wanted else { return }
+            nav.wantsTalk = false
+            Task { await chat.startTalking() }
         }
         .photosPicker(isPresented: $showPhotos, selection: $photo, matching: .images)
         .onChange(of: photo) { _, item in

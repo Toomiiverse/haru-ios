@@ -23,7 +23,11 @@ struct HaruClient: Sendable {
     let base: URL
     let session: URLSession
 
-    init(base: URL) {
+    /// `quick`: a short timeout and no waiting for connectivity, for the
+    /// notification delegate's reply inside iOS's thirty-second background
+    /// budget. The server keeps answering after the socket drops, so the caller
+    /// must not retry — a retry would be a second message.
+    init(base: URL, quick: Bool = false) {
         self.base = base
         let config = URLSessionConfiguration.default
         config.httpCookieAcceptPolicy = .always
@@ -37,6 +41,11 @@ struct HaruClient: Sendable {
         // Her model is 29 MB across forty files and marked immutable by the
         // server; a cache this size keeps it on the phone between launches.
         config.urlCache = URLCache(memoryCapacity: 32 * 1024 * 1024, diskCapacity: 256 * 1024 * 1024)
+        if quick {
+            config.timeoutIntervalForRequest = 25
+            config.timeoutIntervalForResource = 25
+            config.waitsForConnectivity = false
+        }
         session = URLSession(configuration: config)
     }
 
