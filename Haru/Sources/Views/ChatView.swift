@@ -12,6 +12,8 @@ struct ChatView: View {
     @State private var showFiles = false
     @State private var photo: PhotosPickerItem?
     @State private var stageTall = true
+    /// The status bar and title, which the stage now runs up behind.
+    @State private var topInset: CGFloat = 0
     @AppStorage("stage.zoom") private var stageZoom = 1.0
     @AppStorage("stage.lift") private var stageLift = 0.0
     @FocusState private var typing: Bool
@@ -21,15 +23,22 @@ struct ChatView: View {
 
     var body: some View {
         NavigationStack {
-            VStack(spacing: 0) {
-                stageView
-                Divider()
-                transcript
-                composer
+            GeometryReader { geo in
+                VStack(spacing: 0) {
+                    stageView
+                    Divider()
+                    transcript
+                    composer
+                }
+                // Her stage runs up behind the status bar and the title, so
+                // the top of the screen is her ground, not a bar over it.
+                .ignoresSafeArea(edges: .top)
+                .onAppear { topInset = geo.safeAreaInsets.top }
+                .onChange(of: geo.safeAreaInsets.top) { _, now in topInset = now }
             }
             .toolbar { ToolbarItem(placement: .principal) { header } }
             .navigationBarTitleDisplayMode(.inline)
-            .toolbarBackground(.visible, for: .navigationBar)
+            .toolbarBackground(.hidden, for: .navigationBar)
         }
         .task {
             await chat.load()
@@ -79,7 +88,7 @@ struct ChatView: View {
 
     private var stageView: some View {
         StageWebView(stage: chat.stage, client: session.client)
-            .frame(height: stageTall ? 220 : 110)
+            .frame(height: visibleStageHeight + topInset)
             .frame(maxWidth: .infinity)
             .background(Color("LaunchBackground"))
             .overlay(alignment: .bottom) {
@@ -106,13 +115,24 @@ struct ChatView: View {
             .onAppear { frameStage() }
             .onChange(of: stageZoom) { _, _ in frameStage() }
             .onChange(of: stageLift) { _, _ in frameStage() }
+            .onChange(of: topInset) { _, _ in frameStage() }
+            .onChange(of: stageTall) { _, _ in frameStage() }
             .onChange(of: chat.stage.state) { _, now in
                 if case .alive = now { frameStage() }
             }
     }
 
+    /// The part of the stage below the title.
+    private var visibleStageHeight: CGFloat { stageTall ? 260 : 130 }
+
+    /// The page centres her in the whole stage, part of which is under the
+    /// title; the lift moves her down by a little over half the covered inset
+    /// so she sits in the middle of what can be seen with air above her
+    /// heart. Lift is a share of the stage, up positive, as the page reads it.
     private func frameStage() {
-        chat.stage.frame(zoom: stageZoom, lift: stageLift)
+        let total = visibleStageHeight + topInset
+        let under = total > 0 ? (topInset * 0.55) / total : 0
+        chat.stage.frame(zoom: stageZoom, lift: stageLift - under)
     }
 
     // MARK: Header

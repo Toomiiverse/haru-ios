@@ -75,13 +75,33 @@ body {
   @keyframes settle { 0% { scale:.94; } 55% { scale:1.04; } 100% { scale:1; } }
   @keyframes pop { 30% { scale:1.06; } }
   @media (prefers-reduced-motion: reduce) { #avatar, #avatar-pose, #avatar-body { animation:none !important; transition:none !important; } #avatar .face { transition:none !important; } }
-#scene { position:relative; display:flex; align-items:center; justify-content:center; width:100%; height:100%; --avatar-size:min(100vw, 100vh); transition:transform .3s ease; }
-#stage { padding:0; }
+/* Her box is a share of the shorter side; BASE makes her read large at the
+   app's default zoom, the More sliders still scale from there. */
+#scene { position:relative; width:100%; height:100%; --base:0.88; --scene-size:calc(min(100vw, 100vh) * var(--base)); }
+/* Her and her aura together: this is what the app's zoom and lift move, so
+   the field behind stays put and edge to edge. */
+#her { position:absolute; inset:0; display:flex; align-items:center; justify-content:center; transition:transform .3s ease; }
+/* The page's own stylesheet sizes #stage for the phone page (a third of the
+   width); here the stage is hers alone, so #stage takes the scene's size —
+   set after the page's rules, which is what makes it win. */
+#stage { padding:0; position:relative; --avatar-size:var(--scene-size); }
+/* The field she stands in: orbs adrift, sparks rising, a glow at her feet.
+   Slow and dim on its own; a shade brighter while she speaks. Nothing here
+   moves under reduced motion. */
+#field { position:absolute; inset:0; overflow:hidden; pointer-events:none; --lift:1; }
+#field i { position:absolute; display:block; border-radius:50%; will-change:transform, opacity; }
+#field .floor { left:50%; top:78%; width:120%; height:55%; transform:translate(-50%,-50%); border-radius:50%; background:radial-gradient(ellipse at center, oklch(55% 0.13 var(--hue) / 0.22), oklch(40% 0.10 calc(var(--hue) + 30) / 0.08) 45%, transparent 70%); filter:blur(22px); }
+#field .orb { left:var(--x); top:var(--y); width:var(--w); aspect-ratio:1; transform:translate(-50%,-50%); background:radial-gradient(circle, oklch(72% 0.13 calc(var(--hue) + var(--h)) / var(--o)), oklch(60% 0.12 calc(var(--hue) + var(--h)) / calc(var(--o) * 0.5)) 40%, transparent 70%); filter:blur(16px); animation:drift var(--d) ease-in-out infinite alternate; animation-delay:var(--t); }
+#field .spark { left:var(--x); top:var(--y); width:var(--s); height:var(--s); background:oklch(94% 0.06 var(--hue)); box-shadow:0 0 6px 1px oklch(86% 0.12 var(--hue) / 0.7); opacity:0; animation:twinkle var(--d) ease-in-out infinite; animation-delay:var(--t); }
+@keyframes drift { from { transform:translate(-50%,-50%) translate(0,0) scale(1); } to { transform:translate(-50%,-50%) translate(var(--dx), var(--dy)) scale(1.15); } }
+@keyframes twinkle { 0% { opacity:0; transform:translateY(0) scale(.6); } 35% { opacity:calc(var(--o) * var(--lift)); transform:translateY(calc(var(--r) * -.4)) scale(1); } 70% { opacity:calc(var(--o) * .7 * var(--lift)); } 100% { opacity:0; transform:translateY(calc(var(--r) * -1)) scale(.5); } }
+#scene.live #field { --lift:1.6; }
+@media (prefers-reduced-motion: reduce) { #field .orb, #field .spark { animation:none !important; } #field .spark { opacity:calc(var(--o) * .6); } }
 /* Her voice, as light: a glow behind her that swells with the level of what
    she is saying, and rings that spread from her while she speaks. Driven from
    the app's audio meter through haruStage.mouth; dark and still otherwise. */
 #aura { position:absolute; inset:0; display:flex; align-items:center; justify-content:center; pointer-events:none; --voice:0; --live:0; }
-#aura i { position:absolute; display:block; width:var(--avatar-size); aspect-ratio:1; border-radius:50%; will-change:transform, opacity; }
+#aura i { position:absolute; display:block; width:var(--scene-size); aspect-ratio:1; border-radius:50%; will-change:transform, opacity; }
 #aura .glow {
   background:radial-gradient(circle, oklch(82% 0.14 var(--hue) / 0.60) 0%, oklch(64% 0.13 var(--hue) / 0.30) 40%, oklch(46% 0.12 calc(var(--hue) + 40) / 0.12) 60%, transparent 72%);
   filter:blur(14px);
@@ -90,12 +110,12 @@ body {
   transition:opacity .35s ease, transform .09s ease-out;
 }
 #aura .ring { border:1.5px solid oklch(88% 0.10 var(--hue) / 0.55); opacity:0; }
-#aura.live .ring { animation:ripple 2.4s cubic-bezier(.2,.6,.3,1) infinite; }
-#aura.live .r2 { animation-delay:1.2s; }
+#scene.live .ring { animation:ripple 2.4s cubic-bezier(.2,.6,.3,1) infinite; }
+#scene.live .r2 { animation-delay:1.2s; }
 @keyframes ripple { 0% { transform:scale(.80); opacity:calc(.10 + var(--voice) * .55); } 100% { transform:scale(1.55); opacity:0; } }
 @media (prefers-reduced-motion: reduce) { #aura .ring { animation:none !important; } }
 </style>
-<div id="scene"><div id="aura"><i class="glow"></i><i class="ring r1"></i><i class="ring r2"></i></div><section id="stage"></section></div>
+<div id="scene"><div id="field"><i class="floor"></i><i class="orb" style="--x:11.5%;--y:25.4%;--w:157px;--dx:-2px;--dy:-13px;--d:16.3s;--t:-11.3s;--h:-40;--o:0.30"></i><i class="orb" style="--x:7.3%;--y:4.0%;--w:144px;--dx:15px;--dy:18px;--d:15.8s;--t:-17.5s;--h:0;--o:0.29"></i><i class="orb" style="--x:33.6%;--y:45.6%;--w:215px;--dx:-14px;--dy:5px;--d:21.8s;--t:-10.2s;--h:40;--o:0.27"></i><i class="orb" style="--x:29.5%;--y:41.8%;--w:179px;--dx:-6px;--dy:-10px;--d:15.3s;--t:-18.1s;--h:-40;--o:0.31"></i><i class="orb" style="--x:94.3%;--y:76.8%;--w:125px;--dx:7px;--dy:19px;--d:16.5s;--t:-18.5s;--h:0;--o:0.22"></i><i class="orb" style="--x:15.7%;--y:95.9%;--w:168px;--dx:-13px;--dy:12px;--d:23.3s;--t:-2.0s;--h:40;--o:0.23"></i><i class="orb" style="--x:4.8%;--y:54.6%;--w:171px;--dx:29px;--dy:10px;--d:16.4s;--t:-1.7s;--h:-40;--o:0.22"></i><i class="spark" style="--x:9.5%;--y:67.7%;--s:1.4px;--d:9.3s;--t:-6.9s;--o:0.48;--r:24px"></i><i class="spark" style="--x:7.1%;--y:81.6%;--s:2.7px;--d:11.3s;--t:-13.6s;--o:0.42;--r:22px"></i><i class="spark" style="--x:17.2%;--y:65.5%;--s:1.9px;--d:14.6s;--t:-10.0s;--o:0.45;--r:34px"></i><i class="spark" style="--x:57.8%;--y:42.5%;--s:1.9px;--d:12.9s;--t:-0.4s;--o:0.65;--r:17px"></i><i class="spark" style="--x:51.8%;--y:90.6%;--s:2.3px;--d:6.3s;--t:-1.5s;--o:0.59;--r:11px"></i><i class="spark" style="--x:38.6%;--y:15.7%;--s:2.4px;--d:6.0s;--t:-12.4s;--o:0.38;--r:30px"></i><i class="spark" style="--x:17.1%;--y:92.9%;--s:2.0px;--d:14.9s;--t:-4.3s;--o:0.49;--r:25px"></i><i class="spark" style="--x:31.8%;--y:29.9%;--s:2.2px;--d:7.8s;--t:-5.3s;--o:0.67;--r:16px"></i><i class="spark" style="--x:5.9%;--y:80.0%;--s:1.2px;--d:7.4s;--t:-13.1s;--o:0.50;--r:13px"></i><i class="spark" style="--x:99.7%;--y:68.7%;--s:2.6px;--d:6.2s;--t:-11.8s;--o:0.49;--r:24px"></i><i class="spark" style="--x:82.9%;--y:86.1%;--s:2.9px;--d:14.9s;--t:-2.5s;--o:0.68;--r:16px"></i><i class="spark" style="--x:70.2%;--y:93.2%;--s:2.1px;--d:8.1s;--t:-0.5s;--o:0.56;--r:18px"></i><i class="spark" style="--x:98.9%;--y:46.6%;--s:2.6px;--d:12.1s;--t:-0.3s;--o:0.37;--r:30px"></i><i class="spark" style="--x:3.4%;--y:83.3%;--s:2.1px;--d:7.9s;--t:-5.4s;--o:0.49;--r:22px"></i><i class="spark" style="--x:19.0%;--y:98.4%;--s:1.5px;--d:8.2s;--t:-8.3s;--o:0.48;--r:16px"></i><i class="spark" style="--x:55.5%;--y:49.3%;--s:2.7px;--d:7.3s;--t:-5.7s;--o:0.34;--r:31px"></i><i class="spark" style="--x:17.4%;--y:92.6%;--s:1.1px;--d:6.4s;--t:-6.5s;--o:0.33;--r:24px"></i><i class="spark" style="--x:49.1%;--y:58.4%;--s:1.1px;--d:14.4s;--t:-7.7s;--o:0.58;--r:23px"></i><i class="spark" style="--x:12.8%;--y:79.7%;--s:1.0px;--d:10.0s;--t:-5.2s;--o:0.70;--r:30px"></i><i class="spark" style="--x:30.7%;--y:95.4%;--s:1.3px;--d:14.8s;--t:-2.5s;--o:0.79;--r:23px"></i><i class="spark" style="--x:14.0%;--y:82.9%;--s:2.8px;--d:14.9s;--t:-0.1s;--o:0.75;--r:28px"></i><i class="spark" style="--x:89.9%;--y:78.5%;--s:2.5px;--d:12.3s;--t:-6.2s;--o:0.58;--r:24px"></i><i class="spark" style="--x:12.3%;--y:66.8%;--s:1.5px;--d:14.0s;--t:-9.0s;--o:0.36;--r:23px"></i><i class="spark" style="--x:43.4%;--y:35.9%;--s:1.3px;--d:9.6s;--t:-9.1s;--o:0.60;--r:23px"></i><i class="spark" style="--x:5.4%;--y:34.7%;--s:1.7px;--d:12.1s;--t:-8.5s;--o:0.51;--r:13px"></i><i class="spark" style="--x:6.8%;--y:15.6%;--s:1.2px;--d:8.5s;--t:-11.1s;--o:0.75;--r:20px"></i><i class="spark" style="--x:71.5%;--y:41.2%;--s:2.2px;--d:11.5s;--t:-2.8s;--o:0.46;--r:12px"></i><i class="spark" style="--x:92.5%;--y:23.6%;--s:1.6px;--d:13.7s;--t:-4.8s;--o:0.43;--r:23px"></i><i class="spark" style="--x:43.1%;--y:64.9%;--s:2.0px;--d:6.2s;--t:-8.2s;--o:0.65;--r:17px"></i><i class="spark" style="--x:36.7%;--y:48.1%;--s:3.0px;--d:6.5s;--t:-9.4s;--o:0.34;--r:28px"></i></div><div id="her"><div id="aura"><i class="glow"></i><i class="ring r1"></i><i class="ring r2"></i></div><section id="stage"></section></div></div>
 <script>
 (() => {
   const tell = (message) => { try { window.webkit.messageHandlers.stage.postMessage(message); } catch (e) {} };
@@ -105,10 +125,11 @@ body {
   // avatar. Zoom scales her box; lift moves her up by a share of the stage.
   let framing = { zoom: 1, lift: 0 };
   const applyFraming = () => {
-    const host = document.getElementById('scene');
-    if (!host) return;
-    host.style.setProperty('--avatar-size', 'calc(min(100vw, 100vh) * ' + framing.zoom + ')');
-    host.style.transform = 'translateY(' + (-framing.lift * 100).toFixed(1) + '%)';
+    const scene = document.getElementById('scene');
+    const her = document.getElementById('her');
+    if (!scene || !her) return;
+    scene.style.setProperty('--scene-size', 'calc(min(100vw, 100vh) * var(--base) * ' + framing.zoom + ')');
+    her.style.transform = 'translateY(' + (-framing.lift * 100).toFixed(1) + '%)';
   };
   // The aura follows her voice: the meter's level is the target, reached
   // quickly on the way up and let go slowly, so syllables show and pauses
@@ -116,6 +137,7 @@ body {
   let voice = 0, target = 0, speakingUntil = 0, raf = 0;
   const tick = () => {
     const aura = document.getElementById('aura');
+    const scene = document.getElementById('scene');
     const now = performance.now();
     if (now > speakingUntil) target = 0;
     voice += (target - voice) * (target > voice ? 0.55 : 0.10);
@@ -126,6 +148,7 @@ body {
       aura.style.setProperty('--live', live ? '1' : '0');
       aura.classList.toggle('live', live);
     }
+    if (scene) scene.classList.toggle('live', live);
     raf = (live || voice > 0) ? requestAnimationFrame(tick) : 0;
   };
   const wake = () => { if (!raf) raf = requestAnimationFrame(tick); };
