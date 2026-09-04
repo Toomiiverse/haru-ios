@@ -8,6 +8,8 @@ extension PushPrefs {
 struct MoreView: View {
     @Environment(Session.self) private var session
     @Environment(Locator.self) private var locator
+    @Environment(\.scenePhase) private var phase
+    @State private var delivery: Delivery?
     @State private var prefs = PushPrefs.blank
     @State private var prefsLoaded = false
     @State private var placeName = ""
@@ -22,6 +24,7 @@ struct MoreView: View {
                 herStage
                 talking
                 notifications
+                delivered
                 whereabouts
                 Section("Her memory") {
                     NavigationLink("What she remembers") { MemoryView() }
@@ -44,6 +47,11 @@ struct MoreView: View {
             }
         }
         .task { await load() }
+        .onChange(of: phase) { _, now in
+            // Back from Settings: what iOS does with her may have just changed.
+            guard now == .active else { return }
+            Task { delivery = await Delivery.current() }
+        }
     }
 
     private var problemShown: Binding<Bool> {
@@ -52,6 +60,7 @@ struct MoreView: View {
     }
 
     private func load() async {
+        delivery = await Delivery.current()
         await locator.load()
         do {
             let info: PushInfo = try await session.client.get("/api/push")
@@ -113,15 +122,48 @@ struct MoreView: View {
             if !prefs.upBy.isEmpty {
                 DatePicker("Up by", selection: time(\.upBy), displayedComponents: .hourAndMinute)
             }
-            Button("Allow notifications on this phone") {
-                Task { _ = await Refresh.askPermission() }
-            }
         } header: {
             Text("When she speaks first")
         } footer: {
-            Text("These are her rules for pestering you, shared with the desktop. On this phone she can only get a word in when iOS wakes the app in the background, so expect her while the app is open and now and then otherwise.")
+            Text("These are her rules for pestering you, shared with the desktop. She reaches this phone through Apple's push, so expect her whether the app is open or not.")
         }
         .disabled(!prefsLoaded)
+    }
+
+    /// What iOS actually does with hers — read from the phone, since the rules
+    /// above are only half of it. A quiet delivery, a summary, a denied
+    /// permission: this is where "why was that one silent" gets its answer.
+    private var delivered: some View {
+        Section {
+            if let delivery {
+                VStack(alignment: .leading, spacing: 4) {
+                    Text(delivery.headline)
+                    Text(delivery.details)
+                        .font(.footnote)
+                        .foregroundStyle(.secondary)
+                }
+                if delivery.status == .notAsked {
+                    Button("Allow notifications") {
+                        Task {
+                            _ = await Refresh.askPermission()
+                            self.delivery = await Delivery.current()
+                        }
+                    }
+                } else {
+                    Button("Open her page in Settings") {
+                        if let url = URL(string: UIApplication.openNotificationSettingsURLString) {
+                            UIApplication.shared.open(url)
+                        }
+                    }
+                }
+            } else {
+                ProgressView()
+            }
+        } header: {
+            Text("How this phone shows her")
+        } footer: {
+            Text("Read from the phone's own settings. “Quietly” means Notification Center only, with no banner and no sound; pick “Deliver Prominently” on one of hers, or switch banners and sound back on in Settings. A Focus mode silences her too, and iOS does not tell apps about that.")
+        }
     }
 
     private func pref(_ key: WritableKeyPath<PushPrefs, Bool>) -> Binding<Bool> {
