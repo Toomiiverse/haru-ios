@@ -29,6 +29,9 @@ if [ -n "${ASC_KEY_ID:-}" ] && [ -n "${ASC_ISSUER_ID:-}" ] && [ -n "${ASC_KEY_P8
   key=~/private_keys/AuthKey_${ASC_KEY_ID}.p8
   # The secret may be pasted raw or base64; either way it ends up as the .p8.
   if printf '%s' "$ASC_KEY_P8" | grep -q "BEGIN PRIVATE KEY"; then printf '%s\n' "$ASC_KEY_P8" > "$key"; else printf '%s' "$ASC_KEY_P8" | base64 --decode > "$key"; fi
+  # Earlier runs' development certificates go first, or the account fills up
+  # and cloud signing refuses to make this run's (scripts/prune-dev-certs.mjs).
+  node scripts/prune-dev-certs.mjs
   build_number="${GITHUB_RUN_NUMBER:-1}"
   auth=(-allowProvisioningUpdates -authenticationKeyPath "$key" -authenticationKeyID "$ASC_KEY_ID" -authenticationKeyIssuerID "$ASC_ISSUER_ID")
   xcodebuild \
