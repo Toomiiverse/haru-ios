@@ -1,7 +1,8 @@
-# Builds an unsigned .ipa on GitHub's macOS runner, for a household with no Mac.
-# Download the artifact from the run and sideload it (README, "Without a Mac").
-# All the work is in scripts/build-ipa.sh; this file should not need to change.
-name: iOS build
+# The workflow as it should be once the App Store Connect secrets exist. The
+# server's gh token cannot push .github/workflows/, so this is applied by hand:
+#   cp scripts/ios.yml.wanted .github/workflows/ios.yml   (from a machine whose
+#   git can push workflow files), or paste it in on GitHub.
+name: iOS
 on:
   push:
     branches: [main]
@@ -11,9 +12,16 @@ jobs:
     runs-on: macos-15
     steps:
       - uses: actions/checkout@v4
-      - name: Build
+      - name: Build (signed and uploaded to TestFlight when the secrets are set; unsigned otherwise)
+        env:
+          ASC_KEY_ID: ${{ secrets.ASC_KEY_ID }}
+          ASC_ISSUER_ID: ${{ secrets.ASC_ISSUER_ID }}
+          ASC_KEY_P8: ${{ secrets.ASC_KEY_P8 }}
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
         run: bash scripts/build-ipa.sh
       - uses: actions/upload-artifact@v4
+        if: always()
         with:
           name: Haru-unsigned-ipa
           path: Haru-unsigned.ipa
+          if-no-files-found: ignore
