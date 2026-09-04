@@ -330,6 +330,12 @@ body {
   const engine = createEmotionEngine({ duration: () => (reduced ? 0 : fade) });
   const clock = () => (typeof performance !== 'undefined' && performance.now ? performance.now() : Date.now());
   let front = 0, resting = 'neutral', timer = null, frozenAt = null, request = 0, eyes = null;
+  // Whether a face has ever reached the stage. Until one has, a "change" to
+  // the emotion she is already at (neutral, at startup) must still load and
+  // mount it — otherwise the first paint is a no-op and she stays blank, the
+  // way she does asleep, when the only expression that ever comes maps back
+  // to a face the engine thinks is already showing.
+  let mounted = false;
   const cache = {};
 
   function load(name) {
@@ -376,7 +382,8 @@ body {
   }
   function replay(el, cls) { el.classList.remove(cls); if (typeof el.offsetWidth === 'number') void el.offsetWidth; el.classList.add(cls); }
   function show(name, t) {
-    if (!engine.set(name, t)) return;
+    const changed = engine.set(name, t);
+    if (!changed && mounted) return;
     const frame = engine.sample(t);
     const mine = ++request;
     box.setAttribute('aria-label', LABELS[frame.emotion] || ('Haru feeling ' + frame.emotion));
@@ -386,6 +393,7 @@ body {
       incoming.classList.remove('missing');
       eyes = mount(incoming, text);
       front = 1 - front;
+      mounted = true;
       idleFor(frame.emotion);
       paint(frozenAt === null ? frame : engine.sample(frozenAt), frozenAt === null);
       if (!reduced && frozenAt === null) replay(body, 'changed');
