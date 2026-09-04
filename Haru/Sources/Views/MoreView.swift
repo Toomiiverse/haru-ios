@@ -26,6 +26,7 @@ struct MoreView: View {
                 notifications
                 delivered
                 whereabouts
+                health
                 Section("Her memory") {
                     NavigationLink("What she remembers") { MemoryView() }
                 }
@@ -41,9 +42,9 @@ struct MoreView: View {
             .navigationTitle("More")
             .refreshable { await load() }
             .alert("Haru", isPresented: problemShown) {
-                Button("OK") { problem = nil; locator.problem = nil }
+                Button("OK") { problem = nil; locator.problem = nil; Health.shared.problem = nil }
             } message: {
-                Text(problem ?? locator.problem ?? "")
+                Text(problem ?? locator.problem ?? Health.shared.problem ?? "")
             }
         }
         .task { await load() }
@@ -55,13 +56,14 @@ struct MoreView: View {
     }
 
     private var problemShown: Binding<Bool> {
-        Binding(get: { problem != nil || locator.problem != nil },
-                set: { if !$0 { problem = nil; locator.problem = nil } })
+        Binding(get: { problem != nil || locator.problem != nil || Health.shared.problem != nil },
+                set: { if !$0 { problem = nil; locator.problem = nil; Health.shared.problem = nil } })
     }
 
     private func load() async {
         delivery = await Delivery.current()
         await locator.load()
+        await Health.shared.load()
         do {
             let info: PushInfo = try await session.client.get("/api/push")
             prefs = info.prefs
@@ -103,6 +105,37 @@ struct MoreView: View {
         } footer: {
             Text("On, she can't hear herself through the speaker, so you can talk over her; her voice loses a little clarity. Off, she plays back untouched — best on earphones, where there is no echo to cancel. Takes effect the next time you tap the mic.")
         }
+    }
+
+    // MARK: Her eye on you
+
+    private var health: some View {
+        let health = Health.shared
+        return Section {
+            Toggle("Let her see how you slept", isOn: Binding(
+                get: { health.state?.enabled ?? false },
+                set: { on in Task { await health.setEnabled(on) } }
+            ))
+            .disabled(health.state == nil || !Health.available)
+            if let s = health.state, s.enabled {
+                LabeledContent("Right now", value: bodyLine(s))
+            }
+        } header: {
+            Text("Her eye on you")
+        } footer: {
+            Text("Last night's sleep and today's steps, from Apple Health, sent to her server as two numbers whenever Health has something new — with the app closed too. She gets one background sentence out of it, enough to notice a short night. Off unless you switch it on; Health asks its own permission.")
+        }
+    }
+
+    private func bodyLine(_ s: BodyState) -> String {
+        var bits: [String] = []
+        if let m = s.sleepMinutes {
+            let h = Int(m) / 60, mm = Int(m) % 60
+            bits.append(h == 0 ? "\(mm) m asleep" : mm == 0 ? "\(h) h asleep" : "\(h) h \(mm) m asleep")
+        }
+        if let steps = s.steps { bits.append("\(Int(steps).formatted()) steps") }
+        if bits.isEmpty { return "Nothing sent yet" }
+        return bits.joined(separator: " · ") + (s.fresh ? "" : " (old)")
     }
 
     // MARK: Notifications

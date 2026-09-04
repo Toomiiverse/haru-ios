@@ -186,6 +186,18 @@ struct Whereabouts: Decodable {
     let places: [String]
 }
 
+// MARK: Body
+
+/// GET /api/body: the switch, and the last figures the phone sent.
+struct BodyState: Decodable {
+    let enabled: Bool
+    let at: String?
+    let fresh: Bool
+    let day: String?
+    let sleepMinutes: Double?
+    let steps: Double?
+}
+
 // MARK: Push preferences
 
 struct PushPrefs: Codable, Equatable {

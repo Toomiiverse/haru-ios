@@ -107,6 +107,8 @@ final class PushDelegate: NSObject, UIApplicationDelegate, UNUserNotificationCen
     func application(_ application: UIApplication, didFinishLaunchingWithOptions launchOptions: [UIApplication.LaunchOptionsKey: Any]? = nil) -> Bool {
         Push.registerCategories()
         UNUserNotificationCenter.current().delegate = self
+        // Health may have launched us in the background with new samples.
+        Task { @MainActor in Health.shared.resume() }
         return true
     }
 

@@ -51,6 +51,7 @@ targets:
         NSMicrophoneUsageDescription: "So you can talk to her instead of typing."
         NSLocationWhenInUseUsageDescription: "So she knows roughly where you are, if you let her. Off unless you switch it on."
         NSPhotoLibraryUsageDescription: "To send her a picture."
+        NSHealthShareUsageDescription: "So she can notice how you slept and how far you walked, if you let her. Off unless you switch it on."
         BGTaskSchedulerPermittedIdentifiers:
           - com.toomiiverse.haru.refresh
         UIBackgroundModes:
