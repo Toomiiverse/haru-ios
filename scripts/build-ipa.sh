@@ -5,11 +5,12 @@
 set -euo pipefail
 cd "$(dirname "$0")/.."
 
-# The newest Xcode 16 on the box, else whatever is selected. Pinning 16.2 on
-# the macos-15 image failed in actool: its iOS 18.2 simulator runtime is not
-# installed there, and the asset catalog compiler insists on one that matches.
-if compgen -G "/Applications/Xcode_16*.app" >/dev/null; then
-  newest=$(ls -d /Applications/Xcode_16*.app | sort -V | tail -1)
+# The newest Xcode on the box, else whatever is selected. App Store Connect
+# refuses uploads built with anything older than the iOS 26 SDK (Xcode 26),
+# and the macos-15 image's default is still 16.4. (Pinning 16.2 once failed in
+# actool for want of a matching simulator runtime; newest avoids that too.)
+if compgen -G "/Applications/Xcode_*.app" >/dev/null; then
+  newest=$(ls -d /Applications/Xcode_*.app | sort -V | tail -1)
   sudo xcode-select -s "$newest"
 fi
 xcodebuild -version

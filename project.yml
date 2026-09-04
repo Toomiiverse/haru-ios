@@ -36,6 +36,9 @@ targets:
           UIColorName: LaunchBackground
         UISupportedInterfaceOrientations:
           - UIInterfaceOrientationPortrait
+        # iPhone-only and portrait-only; without this App Store Connect demands
+        # all four orientations for iPad multitasking.
+        UIRequiresFullScreen: true
         UIUserInterfaceStyle: Dark
         UIApplicationSupportsIndirectInputEvents: true
         ITSAppUsesNonExemptEncryption: false
