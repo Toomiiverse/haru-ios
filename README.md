@@ -68,6 +68,19 @@ phone in, drop the `.ipa` on it, sign in with your Apple ID.
 Xcode's own errors, if any, show up in the Actions log; the build is the compiler
 for this repo.
 
+### TestFlight (paid developer account)
+
+The same build script signs the app in the cloud and uploads it to App Store
+Connect when the workflow hands it four repository secrets: `ASC_KEY_ID`,
+`ASC_ISSUER_ID`, `ASC_KEY_P8` (the App Store Connect API key, Admin role) and
+`APPLE_TEAM_ID`. `scripts/arm-testflight.sh` sets them from the `.p8` and
+starts a build; `scripts/ios.yml.wanted` is the workflow that passes them (it
+has to be copied over `.github/workflows/ios.yml` from a machine whose GitHub
+token has the `workflow` scope). Each push to `main` then lands in TestFlight
+a few minutes later, build number = the run number. Real push notifications
+need a second key: `scripts/install-apns.sh` puts the APNs `.p8` on the
+server and sets `apns` in its config.
+
 ## First run
 
 Sign-in screen: her address (already filled in), then the same username and
@@ -79,11 +92,12 @@ switch under More → Where you are and name a place "home".
 
 ## What is not here yet
 
-- **Real push notifications.** The phone page uses Web Push; a native app needs
-  APNs instead, which needs a paid developer account and a server-side sender
-  (a `.p8` key, token-based auth, HTTP/2 to `api.push.apple.com`). Until then
-  she relies on background refresh, which iOS runs on its own schedule —
-  minutes to hours apart, and not at all in Low Power Mode.
+- **Real push notifications, until the APNs key is installed.** The server
+  can send through Apple (`electron/apns.ts`, token auth, HTTP/2) and the app
+  registers its token, but both are inert until `apns` is set in the server's
+  config with the `.p8` key (see TestFlight above). Until then she relies on
+  background refresh, which iOS runs on its own schedule — minutes to hours
+  apart, and not at all in Low Power Mode.
 - **The Live2D model.** Her animated model was tried on the stage and set
   aside: 29 MB over the tailnet and a web renderer on the phone for a face the
   SVG does in 30 KB. The stage plumbing (`haru-stage://`) would carry it again.
