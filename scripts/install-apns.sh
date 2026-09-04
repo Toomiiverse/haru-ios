@@ -3,7 +3,7 @@
 # reads it and adds the apns block to config.json (stop → backup → edit → start,
 # since the running app rewrites config.json on its own).
 #
-#   scripts/install-apns.sh ~/AuthKey_XYZ98765AB.p8 XYZ98765AB <team-id>
+#   scripts/install-apns.sh ~/AuthKey_5T6M2M2859.p8 5T6M2M2859 JF3928RYMD
 #
 # The key comes from developer.apple.com → Certificates, Identifiers & Profiles
 # → Keys → "+" with Apple Push Notifications service (APNs) ticked. This is a
@@ -25,7 +25,7 @@ node - "$cfg" "$dest" "$key_id" "$team" <<'JS'
 const fs = require('fs');
 const [cfg, keyPath, keyId, teamId] = process.argv.slice(2);
 const c = JSON.parse(fs.readFileSync(cfg, 'utf8'));
-c.apns = { ...(c.apns || {}), keyPath, keyId, teamId, bundleId: 'com.toomiiverse.haru' };
+c.apns = { ...(c.apns || {}), keyPath, keyId, teamId, bundleId: 'com.toomiiverse.haru.JF3928RYMD' };
 fs.writeFileSync(cfg, JSON.stringify(c, null, 2));
 console.log('apns =', JSON.stringify({ ...c.apns, devices: undefined }));
 JS

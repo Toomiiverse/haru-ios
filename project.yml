@@ -50,7 +50,9 @@ targets:
           - remote-notification
     settings:
       base:
-        PRODUCT_BUNDLE_IDENTIFIER: com.toomiiverse.haru
+        # Apple registered the App ID with the Team ID as a suffix (2026-09-04);
+        # the app matches it. The BG task identifier below is unrelated to this.
+        PRODUCT_BUNDLE_IDENTIFIER: com.toomiiverse.haru.JF3928RYMD
         PRODUCT_NAME: Haru
         CODE_SIGN_STYLE: Automatic
         CODE_SIGN_ENTITLEMENTS: Haru/Haru.entitlements
