@@ -14,6 +14,8 @@ struct ChatView: View {
     @State private var stageTall = true
     /// The status bar and title, which the stage now runs up behind.
     @State private var topInset: CGFloat = 0
+    /// Where things stand with her, for the plate across the seam.
+    @State private var standing: Standing?
     @AppStorage("stage.zoom") private var stageZoom = 1.0
     @AppStorage("stage.lift") private var stageLift = 0.0
     @FocusState private var typing: Bool
@@ -26,7 +28,6 @@ struct ChatView: View {
             GeometryReader { geo in
                 VStack(spacing: 0) {
                     stageView
-                    Divider()
                     transcript
                     composer
                 }
@@ -43,6 +44,10 @@ struct ChatView: View {
         .task {
             await chat.load()
             await chat.askIfSheHasSomethingToSay()
+            await refreshStanding()
+        }
+        .onChange(of: chat.lastReply?.id) { _, _ in
+            Task { await refreshStanding() }
         }
         .onReceive(poll) { _ in
             Task { await chat.askIfSheHasSomethingToSay() }
@@ -54,6 +59,7 @@ struct ChatView: View {
                 // screen is newer than anything the server would hand back.
                 if !chat.busy { await chat.load() }
                 await chat.askIfSheHasSomethingToSay()
+                await refreshStanding()
             }
         }
         // haru://talk — from a Shortcut, the Action button, Safari: open the ear.
@@ -91,6 +97,22 @@ struct ChatView: View {
             .frame(height: visibleStageHeight + topInset)
             .frame(maxWidth: .infinity)
             .background(Color("LaunchBackground"))
+            // Her ground dissolves into the talk rather than stopping at a line.
+            .overlay(alignment: .bottom) {
+                LinearGradient(stops: [
+                    .init(color: .clear, location: 0),
+                    .init(color: Color("LaunchBackground").opacity(0.6), location: 0.65),
+                    .init(color: Color("LaunchBackground"), location: 1),
+                ], startPoint: .top, endPoint: .bottom)
+                .frame(height: 56)
+                .allowsHitTesting(false)
+            }
+            .overlay(alignment: .bottom) {
+                Nameplate(standing: standing, emotion: standing?.emotion ?? chat.emotion) { nav.tab = .status }
+                    .padding(.horizontal, 16)
+                    .offset(y: 28)
+            }
+            .zIndex(1)
             .overlay(alignment: .bottom) {
                 switch chat.stage.state {
                 case .loading(let what):
@@ -98,14 +120,14 @@ struct ChatView: View {
                         ProgressView().controlSize(.small)
                         Text(what).font(.footnote).foregroundStyle(.secondary).lineLimit(1)
                     }
-                    .padding(.bottom, 8)
+                    .padding(.bottom, 64)
                 case .failed(let why):
                     Text("She is not moving — \(why).")
                         .font(.footnote)
                         .foregroundStyle(.secondary)
                         .multilineTextAlignment(.center)
                         .padding(.horizontal, 16)
-                        .padding(.bottom, 8)
+                        .padding(.bottom, 64)
                 case .alive:
                     EmptyView()
                 }
@@ -129,6 +151,10 @@ struct ChatView: View {
     /// title; the lift moves her down by a little over half the covered inset
     /// so she sits in the middle of what can be seen with air above her
     /// heart. Lift is a share of the stage, up positive, as the page reads it.
+    private func refreshStanding() async {
+        if let now: Standing = try? await session.client.get("/api/status") { standing = now }
+    }
+
     private func frameStage() {
         let total = visibleStageHeight + topInset
         let under = total > 0 ? (topInset * 0.55) / total : 0
@@ -167,8 +193,15 @@ struct ChatView: View {
                     Color.clear.frame(height: 1).id("end")
                 }
                 .padding(.horizontal, 12)
-                .padding(.vertical, 8)
+                .padding(.top, 44)
+                .padding(.bottom, 8)
             }
+            .background(
+                LinearGradient(stops: [
+                    .init(color: Color("LaunchBackground"), location: 0),
+                    .init(color: Color(uiColor: .systemBackground), location: 0.4),
+                ], startPoint: .top, endPoint: .bottom)
+            )
             .defaultScrollAnchor(.bottom)
             .scrollDismissesKeyboard(.interactively)
             .onChange(of: chat.entries.count) { _, _ in proxy.scrollTo("end", anchor: .bottom) }
