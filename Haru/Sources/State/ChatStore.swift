@@ -102,10 +102,22 @@ final class ChatStore {
 
     // MARK: Saying something
 
-    func send(_ raw: String, spokeOver: Bool = false) async {
+    /// Sent while she is still answering — the composer has already let go
+    /// of the text — it waits for her to finish rather than drop it. False
+    /// when she took too long, so the composer can put the text back.
+    @discardableResult
+    func send(_ raw: String, spokeOver: Bool = false) async -> Bool {
         let text = raw.trimmingCharacters(in: .whitespacesAndNewlines)
         let files = staged
-        guard !busy, !text.isEmpty || !files.isEmpty else { return }
+        guard !text.isEmpty || !files.isEmpty else { return true }
+        let since = Date()
+        while busy {
+            if Date().timeIntervalSince(since) > 90 {
+                notice = "She is still answering. Say it again in a moment."
+                return false
+            }
+            try? await Task.sleep(for: .milliseconds(150))
+        }
         busy = true
         defer { busy = false }
         staged = []
@@ -121,6 +133,7 @@ final class ChatStore {
         if interrupted { body["interrupted"] = true }
         stage.attend("thinking", ms: 20_000)
         await run(client.stream("/api/chat/stream", body), into: waitID)
+        return true
     }
 
     /// Her last reply, done again. The bubble is swapped, not added.

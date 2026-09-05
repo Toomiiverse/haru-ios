@@ -68,6 +68,11 @@ struct ChatView: View {
             nav.wantsTalk = false
             Task { await chat.startTalking() }
         }
+        // Typing: she shrinks up out of the way to make room for the talk;
+        // done, she is back at full size.
+        .onChange(of: typing) { _, now in
+            withAnimation(.easeInOut(duration: 0.3)) { stageTall = !now }
+        }
         .photosPicker(isPresented: $showPhotos, selection: $photo, matching: .images)
         .onChange(of: photo) { _, item in
             guard let item else { return }
@@ -312,7 +317,8 @@ struct ChatView: View {
     private func sendDraft() async {
         let text = draft
         draft = ""
-        await chat.send(text)
+        let sent = await chat.send(text)
+        if !sent { draft = text }
     }
 
     private func importPhoto(_ item: PhotosPickerItem) async {
@@ -379,13 +385,19 @@ struct EntryView: View {
         }
     }
 
+    /// The colour of the face she is pulling, for the words she leans on.
+    private var tint: Color {
+        let mood = MoodLook.tint(for: chat.emotion)
+        return mood == .secondary ? Color.accentColor : mood
+    }
+
     private var hers: some View {
         VStack(alignment: .leading, spacing: 6) {
             if entry.waiting && entry.text.isEmpty {
                 bubble { ProgressView().controlSize(.small) }
             } else {
                 ForEach(Array(entry.parts.enumerated()), id: \.offset) { _, part in
-                    bubble { Text(part).textSelection(.enabled) }
+                    bubble { Text(Lively.text(part, tint: tint)).textSelection(.enabled) }
                 }
             }
             if entry.serverID != nil && !entry.aside && !entry.waiting { actions }
@@ -399,6 +411,9 @@ struct EntryView: View {
                 .padding(.horizontal, 14)
                 .padding(.vertical, 10)
                 .background(Color(uiColor: .secondarySystemBackground), in: RoundedRectangle(cornerRadius: 18))
+                .overlay(RoundedRectangle(cornerRadius: 18).strokeBorder(tint.opacity(0.28), lineWidth: 1))
+                .modifier(Shimmer(tint: tint, on: isLast))
+                .clipShape(RoundedRectangle(cornerRadius: 18))
                 .overlay(alignment: .leading) {
                     if entry.aside {
                         RoundedRectangle(cornerRadius: 2)
