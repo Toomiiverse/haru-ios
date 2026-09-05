@@ -96,6 +96,33 @@ struct HowIsHaruIntent: AppIntent {
     }
 }
 
+/// Her part in a Focus. Added under Settings → Focus → (a Focus) → Add Filter →
+/// Haru; iOS calls this when that Focus turns on with what was chosen, and
+/// again with the defaults when it turns off — so the default is the everyday
+/// state, nudges as usual, and only a Focus set to hold her holds her.
+struct HaruFocusFilter: SetFocusFilterIntent {
+    static let title: LocalizedStringResource = "Haru"
+    static let description = IntentDescription("Whether she holds her nudges while this Focus is on.")
+
+    @Parameter(title: "Hold her nudges", default: false)
+    var hold: Bool
+
+    var displayRepresentation: DisplayRepresentation {
+        DisplayRepresentation(title: hold ? "Nudges held" : "Nudges as usual")
+    }
+
+    func perform() async throws -> some IntentResult {
+        do {
+            let _: Ignored = try await Session.savedClient(quick: true).post("/api/push/prefs", ["held": .bool(hold)])
+        } catch HaruError.signedOut {
+            throw HaruIntentError.signedOut
+        } catch {
+            throw HaruIntentError.unreachable
+        }
+        return .result()
+    }
+}
+
 /// The phrases Siri answers to, and the tiles in the Shortcuts app.
 struct HaruShortcuts: AppShortcutsProvider {
     static var appShortcuts: [AppShortcut] {

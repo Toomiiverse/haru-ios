@@ -180,7 +180,7 @@ struct MoreView: View {
         } header: {
             Text("When she speaks first")
         } footer: {
-            Text("These are her rules for pestering you, shared with the desktop. She reaches this phone through Apple's push, so expect her whether the app is open or not.")
+            Text("These are her rules for pestering you, shared with the desktop. She reaches this phone through Apple's push, so expect her whether the app is open or not. A Focus can hold her too: Settings → Focus → the one you want → Add Filter → Haru.")
         }
         .disabled(!prefsLoaded)
     }
