@@ -36,10 +36,14 @@ enum Lively {
     private static func ranges(in out: AttributedString, matching pattern: String) -> [Range<AttributedString.Index>] {
         let plain = String(out.characters)
         guard let regex = try? NSRegularExpression(pattern: pattern) else { return [] }
+        let count = out.characters.count
         return regex.matches(in: plain, range: NSRange(plain.startIndex..., in: plain)).compactMap { match in
             guard let stringRange = Range(match.range, in: plain) else { return nil }
-            let lower = out.characters.index(out.startIndex, offsetBy: plain.distance(from: plain.startIndex, to: stringRange.lowerBound))
-            let upper = out.characters.index(out.startIndex, offsetBy: plain.distance(from: plain.startIndex, to: stringRange.upperBound))
+            let from = plain.distance(from: plain.startIndex, to: stringRange.lowerBound)
+            let to = plain.distance(from: plain.startIndex, to: stringRange.upperBound)
+            guard from >= 0, to <= count, from < to else { return nil }
+            let lower = out.characters.index(out.startIndex, offsetBy: from)
+            let upper = out.characters.index(out.startIndex, offsetBy: to)
             return lower..<upper
         }
     }
