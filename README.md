@@ -108,6 +108,10 @@ through `/api/attach` the way the composer does it.
 
 ## Siri, Shortcuts, the Action button
 
+A Focus can hold her: Settings → Focus → the one you want → Add Filter →
+Haru → "Hold her nudges". Her pushes stay in while that Focus is on and
+resume when it ends; the More screen says when a Focus is holding her.
+
 Three verbs, with no server side: "Hey Siri, **tell Haru**" (Siri asks what,
 then reads her reply back), "**talk to Haru**" (opens the app with the ear
 on — set the Action button to this Shortcut), and "**how is Haru**" (her mood

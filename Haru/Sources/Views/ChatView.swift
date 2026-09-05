@@ -10,6 +10,7 @@ struct ChatView: View {
     @State private var draft = ""
     @State private var showPhotos = false
     @State private var showFiles = false
+    @State private var showCamera = false
     @State private var photo: PhotosPickerItem?
     @State private var stageTall = true
     /// The status bar and title, which the stage now runs up behind.
@@ -74,6 +75,10 @@ struct ChatView: View {
             withAnimation(.easeInOut(duration: 0.3)) { stageTall = !now }
         }
         .photosPicker(isPresented: $showPhotos, selection: $photo, matching: .images)
+        .fullScreenCover(isPresented: $showCamera) {
+            CameraPicker { image in Task { await importCaptured(image) } }
+                .ignoresSafeArea()
+        }
         .onChange(of: photo) { _, item in
             guard let item else { return }
             photo = nil
@@ -237,6 +242,9 @@ struct ChatView: View {
             if chat.talkState != .off || chat.callState != .off { talkPill }
             HStack(alignment: .bottom, spacing: 8) {
                 Menu {
+                    if CameraPicker.available {
+                        Button { showCamera = true } label: { Label("Camera", systemImage: "camera") }
+                    }
                     Button { showPhotos = true } label: { Label("Photo", systemImage: "photo") }
                     Button { showFiles = true } label: { Label("File", systemImage: "doc") }
                 } label: {
@@ -336,6 +344,14 @@ struct ChatView: View {
         draft = ""
         let sent = await chat.send(text)
         if !sent { draft = text }
+    }
+
+    /// Straight off the camera: the same JPEG, sized the same way, as a picture
+    /// from the library.
+    private func importCaptured(_ image: UIImage) async {
+        guard let jpeg = image.scaled(toFit: 2048).jpegData(compressionQuality: 0.85) else { return }
+        let stamp = Int(Date().timeIntervalSince1970)
+        await chat.attach(name: "camera-\(stamp).jpg", data: jpeg, type: "image/jpeg")
     }
 
     private func importPhoto(_ item: PhotosPickerItem) async {
