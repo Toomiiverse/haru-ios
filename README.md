@@ -99,6 +99,13 @@ extension fetches `/api/status` on its own clock with the cookie the app
 leaves in the App Group `group.com.toomiiverse.haru`, and shows the app's
 last snapshot until then; taps open the app through `haru://`.
 
+## Share to Haru
+
+From any app's share sheet: a link, some text or a picture, with a line of
+your own, into the chat — and her answer back in the sheet. The `HaruShare`
+extension uses the same App Group cookie as the widgets; a picture is staged
+through `/api/attach` the way the composer does it.
+
 ## Siri, Shortcuts, the Action button
 
 Three verbs, with no server side: "Hey Siri, **tell Haru**" (Siri asks what,

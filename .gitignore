@@ -2,6 +2,7 @@
 Haru.xcodeproj/
 Haru/Info.plist
 HaruWidget/Info.plist
+HaruShare/Info.plist
 build/
 Payload/
 *.ipa

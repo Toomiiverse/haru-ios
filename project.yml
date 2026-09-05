@@ -62,6 +62,7 @@ targets:
           - remote-notification
     dependencies:
       - target: HaruWidget
+      - target: HaruShare
     settings:
       base:
         # Apple registered the App ID with the Team ID as a suffix (2026-09-04);
@@ -101,6 +102,41 @@ targets:
         PRODUCT_NAME: HaruWidget
         CODE_SIGN_STYLE: Automatic
         CODE_SIGN_ENTITLEMENTS: HaruWidget/HaruWidget.entitlements
+        DEVELOPMENT_TEAM: "$(DEVELOPMENT_TEAM)"
+        GENERATE_INFOPLIST_FILE: "NO"
+        SKIP_INSTALL: "YES"
+        SUPPORTS_MACCATALYST: "NO"
+  # "Share to Haru" from any app's share sheet: a link, text or a picture,
+  # with a line of your own, into the chat. Shares the App Group bridge.
+  HaruShare:
+    type: app-extension
+    platform: iOS
+    sources:
+      - path: HaruShare/Sources
+      - path: Haru/Sources/Model/Models.swift
+      - path: Haru/Sources/Model/Shared.swift
+    info:
+      path: HaruShare/Info.plist
+      properties:
+        CFBundleDisplayName: Haru
+        CFBundleName: HaruShare
+        CFBundleShortVersionString: "$(MARKETING_VERSION)"
+        CFBundleVersion: "$(CURRENT_PROJECT_VERSION)"
+        NSExtension:
+          NSExtensionPointIdentifier: com.apple.share-services
+          NSExtensionPrincipalClass: $(PRODUCT_MODULE_NAME).ShareViewController
+          NSExtensionAttributes:
+            NSExtensionActivationRule:
+              NSExtensionActivationSupportsText: true
+              NSExtensionActivationSupportsWebURLWithMaxCount: 1
+              NSExtensionActivationSupportsWebPageWithMaxCount: 1
+              NSExtensionActivationSupportsImageWithMaxCount: 1
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.toomiiverse.haru.JF3928RYMD.share
+        PRODUCT_NAME: HaruShare
+        CODE_SIGN_STYLE: Automatic
+        CODE_SIGN_ENTITLEMENTS: HaruShare/HaruShare.entitlements
         DEVELOPMENT_TEAM: "$(DEVELOPMENT_TEAM)"
         GENERATE_INFOPLIST_FILE: "NO"
         SKIP_INSTALL: "YES"
