@@ -85,6 +85,7 @@ targets:
     sources:
       - path: HaruWidget/Sources
       - path: Haru/Sources/Model/Models.swift
+      - path: Haru/Sources/Model/JSONValue.swift
       - path: Haru/Sources/Model/MoodLook.swift
       - path: Haru/Sources/Model/Shared.swift
     info:
@@ -114,6 +115,7 @@ targets:
     sources:
       - path: HaruShare/Sources
       - path: Haru/Sources/Model/Models.swift
+      - path: Haru/Sources/Model/JSONValue.swift
       - path: Haru/Sources/Model/Shared.swift
     info:
       path: HaruShare/Info.plist
