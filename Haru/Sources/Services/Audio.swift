@@ -115,6 +115,69 @@ final class Audio {
         speaking ? max(0, playEndsAt - ProcessInfo.processInfo.systemUptime) : 0
     }
 
+    // MARK: Her voice, as it is made
+
+    private var streamFormat: AVAudioFormat?
+    private var streamPending = 0        // buffers scheduled and not yet played back
+    private var streamEnded = false      // the server has sent the last of this line
+    private var streamToken = 0
+
+    /// Her voice is about to arrive in pieces: mono 16-bit PCM at `sampleRate`.
+    /// Each piece plays as it lands, one after another, so she starts talking
+    /// at her first sentence rather than her last.
+    func beginStream(sampleRate: Double) {
+        stopPlayback()
+        playToken += 1
+        streamToken = playToken
+        streamPending = 0
+        streamEnded = false
+        guard let format = AVAudioFormat(commonFormat: .pcmFormatFloat32, sampleRate: sampleRate, channels: 1, interleaved: false) else { return }
+        streamFormat = format
+        engine.disconnectNodeOutput(player)
+        engine.connect(player, to: engine.mainMixerNode, format: format)
+        if !engine.isRunning {
+            Self.configureSession(listening: listening)
+            engine.prepare()
+            try? engine.start()
+        }
+        installMouthTap()
+        player.play()
+        speaking = true
+        ear.herTurn(true)
+    }
+
+    /// A stretch of her voice. Nothing happens without a beginStream first.
+    func feedStream(_ pcm: Data) {
+        guard let format = streamFormat, speaking, streamToken == playToken else { return }
+        let count = pcm.count / 2
+        guard count > 0, let buffer = AVAudioPCMBuffer(pcmFormat: format, frameCapacity: AVAudioFrameCount(count)) else { return }
+        buffer.frameLength = AVAudioFrameCount(count)
+        let out = buffer.floatChannelData![0]
+        pcm.withUnsafeBytes { raw in
+            let samples = raw.bindMemory(to: Int16.self)
+            for i in 0..<count { out[i] = Float(Int16(littleEndian: samples[i])) / 32768 }
+        }
+        streamPending += 1
+        let token = streamToken
+        player.scheduleBuffer(buffer, completionCallbackType: .dataPlayedBack) { [weak self] _ in
+            Task { @MainActor in self?.streamed(token) }
+        }
+        playEndsAt = ProcessInfo.processInfo.systemUptime + Double(count) / format.sampleRate
+    }
+
+    /// The last of this line has been sent; she is done once it has played.
+    func endStream() {
+        guard streamToken == playToken else { return }
+        streamEnded = true
+        if streamPending == 0 { finished(streamToken) }
+    }
+
+    private func streamed(_ token: Int) {
+        guard token == streamToken, token == playToken else { return }
+        streamPending = max(0, streamPending - 1)
+        if streamEnded, streamPending == 0 { finished(token) }
+    }
+
     private func finished(_ token: Int) {
         guard token == playToken, speaking else { return }
         speaking = false

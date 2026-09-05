@@ -1,23 +1,34 @@
 import Foundation
 
 /// One call through the server's call socket (electron/webserver.ts,
-/// `/api/evi/session`): the microphone up as raw 16 kHz PCM frames, and back
-/// down what Hume heard, what she said, her voice a sentence at a time as
-/// WAV, and the two events that shape a turn — she was talked over, she has
-/// finished. The server owns the Hume side; the phone never sees a key.
+/// `/api/call/session`): the microphone up as raw 16 kHz PCM frames, and back
+/// down what was heard, what she said, her voice, and the events that shape
+/// a turn — she was talked over, she has finished. Whichever engine the
+/// server runs (its own ears and voice, or Hume's), the phone never sees a
+/// key. Her voice comes either as raw PCM between `audio_start` and
+/// `audio_end` — the phone says `hello` with `pcm: true` to get it that way,
+/// and plays it as it arrives — or as whole sentences of WAV.
 ///
 /// A call runs only while the mic is on. Typed messages keep their own voice.
 final class EviCall: @unchecked Sendable {
     enum Event {
         case ready
         case refused(String)
-        /// What Hume heard them say. Interim while they are still talking.
+        /// What was heard them say. Interim while they are still talking.
         case heard(String, interim: Bool)
         /// One sentence of hers, as text, ahead of its audio.
         case said(String, id: String)
-        /// Her voice for one sentence, as WAV bytes.
+        /// Something she says while a tool runs — not part of the reply.
+        case filler(String)
+        /// Her voice for one sentence, whole, as WAV bytes.
         case voice(Data)
-        case turnEnded
+        /// Her voice is about to stream as raw PCM at this rate.
+        case voiceStart(id: String, sampleRate: Double)
+        /// A stretch of that voice.
+        case pcm(Data)
+        case voiceEnd(id: String)
+        /// The turn is over; the face it ended on, when the server read one.
+        case turnEnded(emotion: String?)
         case interrupted
         case failed(String)
         case ended(String)
@@ -29,7 +40,7 @@ final class EviCall: @unchecked Sendable {
     private var closed = false
 
     init(client: HaruClient, onEvent: @escaping @Sendable (Event) -> Void) {
-        var parts = URLComponents(url: client.base.appendingPathComponent("/api/evi/session"), resolvingAgainstBaseURL: false) ?? URLComponents()
+        var parts = URLComponents(url: client.base.appendingPathComponent("/api/call/session"), resolvingAgainstBaseURL: false) ?? URLComponents()
         parts.scheme = parts.scheme == "http" ? "ws" : "wss"
         var request = URLRequest(url: parts.url ?? client.base)
         // The cookie by hand: a WebSocket handshake does not reliably read the
@@ -45,7 +56,15 @@ final class EviCall: @unchecked Sendable {
 
     func start() {
         task.resume()
+        // What this phone can play: her voice as it is made.
+        task.send(.string("{\"type\":\"hello\",\"pcm\":true}")) { _ in }
         receive()
+    }
+
+    /// Whether she is audible through this phone's speaker right now, so the
+    /// server's ear knows an echo of her from somebody talking over her.
+    func her(speaking: Bool) {
+        task.send(.string("{\"type\":\"her\",\"speaking\":\(speaking)}")) { _ in }
     }
 
     /// A stretch of the microphone: 16 kHz mono PCM16, no header.
@@ -76,7 +95,7 @@ final class EviCall: @unchecked Sendable {
             case .success(let message):
                 switch message {
                 case .string(let text): self.handle(text)
-                case .data(let data): if let text = String(data: data, encoding: .utf8) { self.handle(text) }
+                case .data(let data): self.onEvent(.pcm(data))
                 @unknown default: break
                 }
                 self.receive()
@@ -94,7 +113,10 @@ final class EviCall: @unchecked Sendable {
         case "assistant_message": onEvent(.said(event.text ?? "", id: event.id ?? ""))
         case "audio_output":
             if let encoded = event.data, let wav = Data(base64Encoded: encoded) { onEvent(.voice(wav)) }
-        case "assistant_end": onEvent(.turnEnded)
+        case "audio_start": onEvent(.voiceStart(id: event.id ?? "", sampleRate: event.sampleRate ?? 24_000))
+        case "audio_end": onEvent(.voiceEnd(id: event.id ?? ""))
+        case "filler": onEvent(.filler(event.text ?? ""))
+        case "assistant_end": onEvent(.turnEnded(emotion: event.emotion))
         case "user_interruption": onEvent(.interrupted)
         case "error": onEvent(.failed(event.message ?? "Something went wrong on the call."))
         case "ended": finish(event.reason ?? "The call ended.")
@@ -122,4 +144,6 @@ private struct CallEvent: Decodable {
     let id: String?
     let data: String?
     let message: String?
+    let sampleRate: Double?
+    let emotion: String?
 }

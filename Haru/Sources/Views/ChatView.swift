@@ -312,7 +312,7 @@ struct ChatView: View {
         case .connecting: return "Calling her…"
         case .listening: return "On a call — just talk" + echo
         case .thinking: return "Thinking…"
-        case .speaking: return "Speaking… talk over her to cut in"
+        case .speaking: return chat.callFiller.map { "“\($0)” — looking that up" } ?? "Speaking… talk over her to cut in"
         case .off: break
         }
         switch chat.talkState {

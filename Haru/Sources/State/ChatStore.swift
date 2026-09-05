@@ -51,6 +51,8 @@ final class ChatStore {
     /// The call, when the mic is on and she is being reached through Hume.
     private(set) var call: EviCall?
     private(set) var callState = CallState.off
+    /// What she said while a tool ran, for the pill; nil once the reply comes.
+    private(set) var callFiller: String?
     /// Whether a call can be placed, from the server; nil until asked.
     private(set) var eviStatus: EviStatus?
 
@@ -72,7 +74,12 @@ final class ChatStore {
     init(session: Session) {
         self.session = session
         audio.onLevel = { [weak self] level in self?.stage.mouth(level) }
-        audio.onFinished = { [weak self] in self?.drain() }
+        audio.onFinished = { [weak self] in
+            guard let self else { return }
+            // She has gone quiet: the server's ear can stop discounting her echo.
+            self.call?.her(speaking: false)
+            self.drain()
+        }
         audio.onVoiceStart = { [weak self] in
             guard let self, let talk = self.talk else { return }
             self.act(talk.voiceStarted(self.now))
@@ -485,6 +492,7 @@ final class ChatStore {
         hush()
         try? audio.listen(false)
         callState = .off
+        callFiller = nil
         callReply = ""
         callReplyID = nil
     }
@@ -505,8 +513,12 @@ final class ChatStore {
             callReplyID = nil
             callState = .thinking
             stage.attend("thinking", ms: 20_000)
+        case .filler(let text):
+            callFiller = text
+            callState = .speaking
         case .said(let text, _):
             guard !text.isEmpty else { return }
+            callFiller = nil
             if let id = callReplyID, let i = entries.firstIndex(where: { $0.id == id }) {
                 callReply += " " + text
                 entries[i].text = callReply
@@ -519,12 +531,32 @@ final class ChatStore {
             callState = .speaking
         case .voice(let wav):
             play(wav)
-        case .turnEnded:
-            let line = callReply
-            if !line.isEmpty { Task { await express(line) } }
+        case .voiceStart(_, let sampleRate):
+            // Streamed: whatever whole lines were queued are hers no longer.
+            for line in lines { line.fetch.cancel() }
+            lines = []
+            draining = false
+            audio.beginStream(sampleRate: sampleRate)
+            call?.her(speaking: true)
+            stage.attend("talking", ms: 4_000)
+        case .pcm(let data):
+            audio.feedStream(data)
+        case .voiceEnd:
+            audio.endStream()
+        case .turnEnded(let emotion):
+            callFiller = nil
+            if let emotion, !emotion.isEmpty {
+                // The face came with the turn; no model to ask.
+                self.emotion = emotion
+                stage.express(emotion)
+            } else if !callReply.isEmpty {
+                let line = callReply
+                Task { await express(line) }
+            }
             if callState == .thinking || (callState == .speaking && !draining && !audio.speaking) { callState = .listening }
         case .interrupted:
             hush()
+            callFiller = nil
             callState = .listening
             stage.attend("typing", ms: 1_500)
         case .failed(let message):

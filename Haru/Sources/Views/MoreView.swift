@@ -102,20 +102,21 @@ struct MoreView: View {
 
     private var talking: some View {
         Section {
-            Toggle("Call her through Hume", isOn: $talkEvi)
-            LabeledContent("Calls today", value: callLine)
+            Toggle("The mic places a call", isOn: $talkEvi)
+            LabeledContent("Calls", value: callLine)
             Toggle("Cancel her echo while listening", isOn: $echoCancel)
         } header: {
             Text("Talking")
         } footer: {
-            Text("Calling on: the mic opens a call — Hume listens, decides when you've finished, lets you talk over her, and speaks in her own voice; her words are still her own. Off: the mic is the ordinary ear — what you say is written down and she answers as she does a message. Typed messages get her usual voice either way. Echo cancelling on: she can't hear herself through the speaker; off is best on earphones. Both take effect the next time you tap the mic.")
+            Text("On: the mic opens a call — she listens, decides when you've finished, lets you talk over her, and answers in her own voice a sentence at a time; her words are her own. Off: the mic is the ordinary ear — what you say is written down and she answers as she does a message. Typed messages get her usual voice either way. Echo cancelling on: she can't hear herself through the speaker; off is best on earphones. Both take effect the next time you tap the mic.")
         }
     }
 
     private var callLine: String {
         guard let evi else { return "…" }
         let used = Int(evi.minutesToday ?? 0), cap = Int(evi.cap ?? 0)
-        if evi.enabled == true { return "\(used) of \(cap) min" }
+        let where_ = evi.engine == "local" ? "at home" : evi.engine == "hume" ? "through Hume" : (evi.engine ?? "")
+        if evi.enabled == true { return cap > 0 ? "\(where_), \(used) of \(cap) min today" : where_ }
         switch evi.reason {
         case "off": return "switched off on her server"
         case "not set up": return "not set up on her server"
