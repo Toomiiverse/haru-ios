@@ -66,7 +66,7 @@ struct LookedUp: Decodable { let name: String? }
 
 // MARK: Status
 
-struct Meter: Decodable, Identifiable {
+struct Meter: Codable, Identifiable {
     let key: String
     let label: String
     /// 0–100.
@@ -75,7 +75,7 @@ struct Meter: Decodable, Identifiable {
     var id: String { key }
 }
 
-struct Bond: Decodable {
+struct Bond: Codable {
     let value: Double
     let level: Double
     let of: Double
@@ -84,9 +84,9 @@ struct Bond: Decodable {
     let toNext: Double
 }
 
-struct Grudge: Decodable { let value: Double; let of: Double; let note: String }
+struct Grudge: Codable { let value: Double; let of: Double; let note: String }
 
-struct WaitingItem: Decodable, Identifiable {
+struct WaitingItem: Codable, Identifiable {
     let id: String
     let title: String
     /// "today", "tomorrow", "Thursday, 3 days from now" — never a bare date.
@@ -94,7 +94,7 @@ struct WaitingItem: Decodable, Identifiable {
     let late: Bool
 }
 
-struct Standing: Decodable {
+struct Standing: Codable {
     let emotion: String
     let face: String
     let mood: String

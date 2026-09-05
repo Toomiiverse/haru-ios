@@ -152,7 +152,10 @@ struct ChatView: View {
     /// so she sits in the middle of what can be seen with air above her
     /// heart. Lift is a share of the stage, up positive, as the page reads it.
     private func refreshStanding() async {
-        if let now: Standing = try? await session.client.get("/api/status") { standing = now }
+        if let now: Standing = try? await session.client.get("/api/status") {
+            standing = now
+            Shared.publish(standing: now)
+        }
     }
 
     private func frameStage() {

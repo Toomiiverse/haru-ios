@@ -51,6 +51,7 @@ final class Session {
             let _: ChatPage = try await client.get("/api/chat")
             signedIn = true
             problem = nil
+            Shared.publish(base: client.base)
         } catch HaruError.signedOut {
             signedIn = false
         } catch {
@@ -69,11 +70,13 @@ final class Session {
         ])
         signedIn = true
         problem = nil
+        Shared.publish(base: client.base)
     }
 
     func signOut() async {
         let _: Okay? = try? await client.post("/api/logout")
         client.forgetCookies()
+        Shared.forget()
         signedIn = false
     }
 }

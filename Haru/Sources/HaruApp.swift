@@ -34,6 +34,7 @@ struct HaruApp: App {
             case .background: Refresh.schedule()
             case .active:
                 locator.wake()
+                Shared.publish(base: session.client.base)
                 Health.shared.wake()
                 Push.register()
                 Task { await Push.sync(session) }

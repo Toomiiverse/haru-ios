@@ -60,6 +60,8 @@ targets:
           - fetch
           - audio
           - remote-notification
+    dependencies:
+      - target: HaruWidget
     settings:
       base:
         # Apple registered the App ID with the Team ID as a suffix (2026-09-04);
@@ -73,6 +75,35 @@ targets:
         GENERATE_INFOPLIST_FILE: "NO"
         ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
         ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME: AccentColor
+        SUPPORTS_MACCATALYST: "NO"
+  # Her on the home and lock screens. Shares the status types, the mood
+  # look and the App Group bridge with the app; everything else is its own.
+  HaruWidget:
+    type: app-extension
+    platform: iOS
+    sources:
+      - path: HaruWidget/Sources
+      - path: Haru/Sources/Model/Models.swift
+      - path: Haru/Sources/Model/MoodLook.swift
+      - path: Haru/Sources/Model/Shared.swift
+    info:
+      path: HaruWidget/Info.plist
+      properties:
+        CFBundleDisplayName: Haru
+        CFBundleName: HaruWidget
+        CFBundleShortVersionString: "$(MARKETING_VERSION)"
+        CFBundleVersion: "$(CURRENT_PROJECT_VERSION)"
+        NSExtension:
+          NSExtensionPointIdentifier: com.apple.widgetkit-extension
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.toomiiverse.haru.JF3928RYMD.widget
+        PRODUCT_NAME: HaruWidget
+        CODE_SIGN_STYLE: Automatic
+        CODE_SIGN_ENTITLEMENTS: HaruWidget/HaruWidget.entitlements
+        DEVELOPMENT_TEAM: "$(DEVELOPMENT_TEAM)"
+        GENERATE_INFOPLIST_FILE: "NO"
+        SKIP_INSTALL: "YES"
         SUPPORTS_MACCATALYST: "NO"
 schemes:
   Haru:

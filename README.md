@@ -90,6 +90,15 @@ kept on the phone, the same as the page's. The phone must be on the tailnet.
 Then allow notifications and, if you want her to know where you are, flip the
 switch under More → Where you are and name a place "home".
 
+## Widgets
+
+Her on the home screen (small: face, feeling, bond, energy; medium: her mood
+in her own words, the bars, and a mic that opens the ear) and on the lock
+screen (a gauge, a two-line strip, an inline line). The `HaruWidget`
+extension fetches `/api/status` on its own clock with the cookie the app
+leaves in the App Group `group.com.toomiiverse.haru`, and shows the app's
+last snapshot until then; taps open the app through `haru://`.
+
 ## Siri, Shortcuts, the Action button
 
 Three verbs, with no server side: "Hey Siri, **tell Haru**" (Siri asks what,
