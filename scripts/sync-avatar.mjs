@@ -130,13 +130,15 @@ ${css}
   const clamp = (v, lo, hi) => (v < lo ? lo : v > hi ? hi : v);
   // The app speaks to window.haruStage; this hands it on to the page's
   // avatar. Zoom scales her box; lift moves her up by a share of the stage.
-  let framing = { zoom: 1, lift: 0 };
+  let framing = { zoom: 1, lift: 0, scale: 1 };
   const applyFraming = () => {
     const scene = document.getElementById('scene');
     const her = document.getElementById('her');
     if (!scene || !her) return;
     scene.style.setProperty('--scene-size', 'calc(min(100vw, 100vh) * var(--base) * ' + framing.zoom + ')');
-    her.style.transform = 'translateY(' + (-framing.lift * 100).toFixed(1) + '%)';
+    // Scale rides the same transition as the lift, so the app's compact mode
+    // (typing) shrinks her smoothly with the stage rather than in one jump.
+    her.style.transform = 'translateY(' + (-framing.lift * 100).toFixed(1) + '%) scale(' + framing.scale.toFixed(3) + ')';
   };
   // The aura follows her voice: the meter's level is the target, reached
   // quickly on the way up and let go slowly, so syllables show and pauses
@@ -172,7 +174,7 @@ ${css}
     },
     mouth: (level) => { target = clamp(Number(level) || 0, 0, 1); speakingUntil = Math.max(speakingUntil, performance.now() + 450); wake(); },
     motion: () => {},
-    frame: (zoom, lift) => { framing = { zoom: clamp(Number(zoom) || 1, 0.5, 3), lift: clamp(Number(lift) || 0, -1, 1) }; applyFraming(); },
+    frame: (zoom, lift, scale) => { framing = { zoom: clamp(Number(zoom) || 1, 0.5, 3), lift: clamp(Number(lift) || 0, -1, 1), scale: clamp(Number(scale) || 1, 0.2, 1) }; applyFraming(); },
   };
   document.addEventListener('DOMContentLoaded', applyFraming);
   // Alive once her first face is on the stage; failed if it never comes.

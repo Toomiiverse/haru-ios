@@ -85,8 +85,10 @@ final class Stage: NSObject, WKNavigationDelegate {
 
     /// Zoom 1 fits her whole height; 2 shows her top half. Lift moves her up
     /// by that share of the stage.
-    func frame(zoom: Double, lift: Double) {
-        run("window.haruStage.frame(\(String(format: "%.3f", zoom)), \(String(format: "%.3f", lift)))")
+    /// Zoom sizes her box; lift moves her; scale shrinks her in place, on the
+    /// page's own transition — the compact stage while typing.
+    func frame(zoom: Double, lift: Double, scale: Double = 1) {
+        run("window.haruStage.frame(\(String(format: "%.3f", zoom)), \(String(format: "%.3f", lift)), \(String(format: "%.3f", scale)))")
     }
 
     /// How far and how often she looks about: 0 still, 1 lively.

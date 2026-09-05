@@ -13,6 +13,9 @@ struct ChatView: View {
     @State private var showCamera = false
     @State private var photo: PhotosPickerItem?
     @State private var stageTall = true
+    /// Typing: the stage is a strip under the title, her small and whole in
+    /// it, the plate gone, and the talk has the room.
+    @State private var compact = false
     /// The status bar and title, which the stage now runs up behind.
     @State private var topInset: CGFloat = 0
     /// Where things stand with her, for the plate across the seam.
@@ -72,7 +75,7 @@ struct ChatView: View {
         // Typing: she shrinks up out of the way to make room for the talk;
         // done, she is back at full size.
         .onChange(of: typing) { _, now in
-            withAnimation(.easeInOut(duration: 0.3)) { stageTall = !now }
+            withAnimation(.easeInOut(duration: 0.3)) { compact = now }
         }
         .photosPicker(isPresented: $showPhotos, selection: $photo, matching: .images)
         .fullScreenCover(isPresented: $showCamera) {
@@ -118,9 +121,12 @@ struct ChatView: View {
                 .allowsHitTesting(false)
             }
             .overlay(alignment: .bottom) {
-                Nameplate(standing: standing, emotion: standing?.emotion ?? chat.emotion) { nav.tab = .status }
-                    .padding(.horizontal, 16)
-                    .offset(y: 28)
+                if !compact {
+                    Nameplate(standing: standing, emotion: standing?.emotion ?? chat.emotion) { nav.tab = .status }
+                        .padding(.horizontal, 16)
+                        .offset(y: 28)
+                        .transition(.opacity.combined(with: .move(edge: .top)))
+                }
             }
             .zIndex(1)
             .overlay(alignment: .bottom) {
@@ -149,13 +155,14 @@ struct ChatView: View {
             .onChange(of: stageLift) { _, _ in frameStage() }
             .onChange(of: topInset) { _, _ in frameStage() }
             .onChange(of: stageTall) { _, _ in frameStage() }
+            .onChange(of: compact) { _, _ in frameStage() }
             .onChange(of: chat.stage.state) { _, now in
                 if case .alive = now { frameStage() }
             }
     }
 
     /// The part of the stage below the title.
-    private var visibleStageHeight: CGFloat { stageTall ? 260 : 130 }
+    private var visibleStageHeight: CGFloat { compact ? 84 : stageTall ? 260 : 130 }
 
     /// The page centres her in the whole stage, part of which is under the
     /// title; the lift moves her down by a little over half the covered inset
@@ -171,7 +178,8 @@ struct ChatView: View {
     private func frameStage() {
         let total = visibleStageHeight + topInset
         let under = total > 0 ? (topInset * 0.55) / total : 0
-        chat.stage.frame(zoom: stageZoom, lift: stageLift - under)
+        // Compact: half her size, so the whole of her fits the strip.
+        chat.stage.frame(zoom: stageZoom, lift: stageLift - under, scale: compact ? 0.5 : 1)
     }
 
     // MARK: Header
@@ -213,7 +221,7 @@ struct ChatView: View {
                     Color.clear.frame(height: 1).id("end")
                 }
                 .padding(.horizontal, 12)
-                .padding(.top, 44)
+                .padding(.top, compact ? 8 : 44)
                 .padding(.bottom, 8)
             }
             .background(
