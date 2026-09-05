@@ -46,19 +46,19 @@ final class ShareModel {
         let providers = (context?.inputItems as? [NSExtensionItem])?.flatMap { $0.attachments ?? [] } ?? []
         for provider in providers {
             if image == nil, provider.hasItemConformingToTypeIdentifier(UTType.image.identifier) {
-                if let data = try? await provider.loadDataRepresentation(for: .image), let picture = UIImage(data: data) {
+                if let data = await Self.data(from: provider, as: .image), let picture = UIImage(data: data) {
                     image = picture
                     continue
                 }
             }
             if url == nil, provider.hasItemConformingToTypeIdentifier(UTType.url.identifier) {
-                if let item = try? await provider.loadItem(forTypeIdentifier: UTType.url.identifier) {
+                if let item = await Self.item(from: provider, typeIdentifier: UTType.url.identifier) {
                     if let link = item as? URL { url = link; continue }
                     if let data = item as? Data, let link = URL(dataRepresentation: data, relativeTo: nil) { url = link; continue }
                 }
             }
             if text == nil, provider.hasItemConformingToTypeIdentifier(UTType.plainText.identifier) {
-                if let item = try? await provider.loadItem(forTypeIdentifier: UTType.plainText.identifier) {
+                if let item = await Self.item(from: provider, typeIdentifier: UTType.plainText.identifier) {
                     if let string = item as? String { text = string }
                     else if let data = item as? Data, let string = String(data: data, encoding: .utf8) { text = string }
                 }
@@ -97,6 +97,20 @@ final class ShareModel {
             phase = .sent(reply.isEmpty ? "Sent. She read it and said nothing." : reply)
         } catch {
             phase = .failed(error.localizedDescription)
+        }
+    }
+
+    /// NSItemProvider's loaders, as awaitables: only the completion forms are
+    /// there for every type on the deployment target.
+    private static func data(from provider: NSItemProvider, as type: UTType) async -> Data? {
+        await withCheckedContinuation { continuation in
+            _ = provider.loadDataRepresentation(for: type) { data, _ in continuation.resume(returning: data) }
+        }
+    }
+
+    private static func item(from provider: NSItemProvider, typeIdentifier: String) async -> NSSecureCoding? {
+        await withCheckedContinuation { continuation in
+            provider.loadItem(forTypeIdentifier: typeIdentifier, options: nil) { item, _ in continuation.resume(returning: item) }
         }
     }
 
