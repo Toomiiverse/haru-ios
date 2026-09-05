@@ -5,29 +5,53 @@ import SwiftUI
 /// Markdown is read inline only, so nothing she says turns into a heading
 /// or a list by accident, and a line with none of it comes back untouched.
 enum Lively {
-    private static let open: Character = "\u{E000}"
-    private static let close: Character = "\u{E001}"
-
     static func text(_ raw: String, tint: Color) -> AttributedString {
-        // Highlights first: ==like this== is wrapped in sentinels the markdown
-        // pass leaves alone, so they can be found afterwards.
-        let marked = raw.replacingOccurrences(of: #"==(.+?)=="#, with: "\(open)$1\(close)", options: .regularExpression)
-        let options = AttributedString.MarkdownParsingOptions(interpretedSyntax: .inlineOnlyPreservingWhitespace)
-        var out = (try? AttributedString(markdown: marked, options: options)) ?? AttributedString(marked)
-        // Bold, in her colour.
-        let bold = out.runs.compactMap { run in run.inlinePresentationIntent?.contains(.stronglyEmphasized) == true ? run.range : nil }
-        for range in bold { out[range].foregroundColor = tint }
-        for range in ranges(in: out, matching: "\(open)[^\(close)]*\(close)") {
-            out[range].backgroundColor = tint.opacity(0.22)
-            out[range].foregroundColor = tint
+        // Built from pieces rather than edited in place: ==highlights== are
+        // split out before the markdown pass, so no character is ever removed
+        // from an attributed string afterwards. Foundation asserts when its
+        // character view is replaced wholesale, which is what removeAll does —
+        // build 41 crashed on every launch that way.
+        var out = AttributedString()
+        for (piece, highlighted) in segments(raw) {
+            var part = parse(piece)
+            if highlighted {
+                part.backgroundColor = tint.opacity(0.22)
+                part.foregroundColor = tint
+            }
+            // Bold, in her colour.
+            let bold = part.runs.compactMap { run in run.inlinePresentationIntent?.contains(.stronglyEmphasized) == true ? run.range : nil }
+            for range in bold { part[range].foregroundColor = tint }
+            out.append(part)
         }
-        out.characters.removeAll { $0 == open || $0 == close }
         // A word she shouts.
         for range in ranges(in: out, matching: #"\b[A-Z]{3,}\b"#) {
             out[range].foregroundColor = tint
             out[range].font = .body.weight(.semibold)
         }
         return out
+    }
+
+    /// The line cut at its ==highlights==: the text between, and each
+    /// highlight's inside, in order, marked which is which.
+    private static func segments(_ raw: String) -> [(String, Bool)] {
+        guard let regex = try? NSRegularExpression(pattern: "==(.+?)==") else { return [(raw, false)] }
+        var pieces: [(String, Bool)] = []
+        var cursor = raw.startIndex
+        for match in regex.matches(in: raw, range: NSRange(raw.startIndex..., in: raw)) {
+            guard let whole = Range(match.range, in: raw), let inner = Range(match.range(at: 1), in: raw) else { continue }
+            if whole.lowerBound > cursor { pieces.append((String(raw[cursor..<whole.lowerBound]), false)) }
+            pieces.append((String(raw[inner]), true))
+            cursor = whole.upperBound
+        }
+        if cursor < raw.endIndex { pieces.append((String(raw[cursor...]), false)) }
+        return pieces.isEmpty ? [(raw, false)] : pieces
+    }
+
+    /// Inline markdown only: bold, italics, strikethrough, code. Never a
+    /// heading or a list, and a line that fails to parse comes back as it was.
+    private static func parse(_ piece: String) -> AttributedString {
+        let options = AttributedString.MarkdownParsingOptions(interpretedSyntax: .inlineOnlyPreservingWhitespace)
+        return (try? AttributedString(markdown: piece, options: options)) ?? AttributedString(piece)
     }
 
     /// Every match of the pattern in the text as it reads, as ranges into the
