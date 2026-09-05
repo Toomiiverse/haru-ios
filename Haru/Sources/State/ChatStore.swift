@@ -31,6 +31,10 @@ struct StagedFile: Identifiable, Hashable {
     let record: JSONValue
 }
 
+/// Where a call through Hume stands. Off is the ordinary state; the rest
+/// only while the mic is on and she is being reached speech to speech.
+enum CallState { case off, connecting, listening, thinking, speaking }
+
 @MainActor @Observable
 final class ChatStore {
     var entries: [Entry] = []
@@ -44,6 +48,11 @@ final class ChatStore {
     var notice: String?
     /// The conversation by voice: off, or where it stands.
     private(set) var talkState = TalkState.off
+    /// The call, when the mic is on and she is being reached through Hume.
+    private(set) var call: EviCall?
+    private(set) var callState = CallState.off
+    /// Whether a call can be placed, from the server; nil until asked.
+    private(set) var eviStatus: EviStatus?
 
     let session: Session
     let audio = Audio()
@@ -56,6 +65,9 @@ final class ChatStore {
     private var lines: [(gap: Int, fetch: Task<Data?, Never>)] = []
     private var draining = false
     private var spokeSomething = false
+    /// Her reply on the call, as it arrives a sentence at a time, and its bubble.
+    private var callReply = ""
+    private var callReplyID: String?
 
     init(session: Session) {
         self.session = session
@@ -70,6 +82,7 @@ final class ChatStore {
             guard let self else { return }
             Task { await self.hear(wav) }
         }
+        audio.onFrames = { [weak self] pcm in self?.call?.send(pcm) }
     }
 
     private var client: HaruClient { session.client }
@@ -110,6 +123,9 @@ final class ChatStore {
         let text = raw.trimmingCharacters(in: .whitespacesAndNewlines)
         let files = staged
         guard !text.isEmpty || !files.isEmpty else { return true }
+        // One voice at a time: something typed ends the call, and is answered
+        // the ordinary way, in her ordinary voice.
+        if call != nil { endCall() }
         let since = Date()
         while busy {
             if Date().timeIntervalSince(since) > 90 {
@@ -319,6 +335,7 @@ final class ChatStore {
             draining = false
             spokeSomething = false
             if let talk { act(talk.spokeEnd(now)) }
+            if call != nil, callState == .speaking { callState = .listening }
             return
         }
         draining = true
@@ -403,6 +420,125 @@ final class ChatStore {
     func discard(_ file: StagedFile) async {
         staged.removeAll { $0.id == file.id }
         let _: Okay? = try? await client.post("/api/attach/discard", ["attachment": file.record])
+    }
+
+    // MARK: On a call
+
+    /// Whether the mic button is lit: a call, or the ordinary talk mode.
+    var micOn: Bool { call != nil || talk != nil }
+
+    /// The user's choice in More: the mic opens a call through Hume when the
+    /// server can place one, else the ordinary talk mode. On by default.
+    private var prefersCall: Bool {
+        UserDefaults.standard.object(forKey: "talk.evi") as? Bool ?? true
+    }
+
+    func refreshEvi() async {
+        eviStatus = try? await client.get("/api/evi/status")
+    }
+
+    /// The mic button. Off if anything is on; else a call if the phone wants
+    /// one and she can take it, else the ordinary ear.
+    func toggleMic() async {
+        if call != nil { endCall(); return }
+        if talk != nil { stopTalking(); return }
+        if prefersCall {
+            await refreshEvi()
+            if eviStatus?.enabled == true { await startCall(); return }
+        }
+        await startTalking()
+    }
+
+    /// Places the call: the microphone streams up as it comes, and Hume does
+    /// the hearing, the deciding and the saying. Her words still come from
+    /// her own brain, through the server's hook.
+    func startCall() async {
+        guard call == nil, talk == nil else { return }
+        guard await Audio.allowed() else {
+            notice = "The microphone is switched off for Haru in Settings."
+            return
+        }
+        audio.echoCancelling = UserDefaults.standard.object(forKey: "talk.echoCancel") as? Bool ?? true
+        do {
+            try audio.listen(true)
+        } catch {
+            notice = "The microphone would not start: \(error.localizedDescription)"
+            return
+        }
+        callState = .connecting
+        callReply = ""
+        callReplyID = nil
+        let call = EviCall(client: client) { [weak self] event in
+            Task { @MainActor in self?.handleCall(event) }
+        }
+        self.call = call
+        audio.stream(true)
+        call.start()
+    }
+
+    /// Hangs up, from this end or because the far end did.
+    func endCall() {
+        guard let call else { return }
+        audio.stream(false)
+        call.stop()
+        self.call = nil
+        hush()
+        try? audio.listen(false)
+        callState = .off
+        callReply = ""
+        callReplyID = nil
+    }
+
+    private func handleCall(_ event: EviCall.Event) {
+        guard call != nil else { return }
+        switch event {
+        case .ready:
+            callState = .listening
+        case .refused(let why):
+            notice = why
+            endCall()
+        case .heard(let text, let interim):
+            guard !interim, !text.isEmpty else { return }
+            // What Hume heard is what her brain is answering: their bubble.
+            entries.append(Entry(id: UUID().uuidString, kind: .me, text: text))
+            callReply = ""
+            callReplyID = nil
+            callState = .thinking
+            stage.attend("thinking", ms: 20_000)
+        case .said(let text, _):
+            guard !text.isEmpty else { return }
+            if let id = callReplyID, let i = entries.firstIndex(where: { $0.id == id }) {
+                callReply += " " + text
+                entries[i].text = callReply
+            } else {
+                let id = UUID().uuidString
+                callReply = text
+                callReplyID = id
+                entries.append(Entry(id: id, kind: .her, text: text))
+            }
+            callState = .speaking
+        case .voice(let wav):
+            play(wav)
+        case .turnEnded:
+            let line = callReply
+            if !line.isEmpty { Task { await express(line) } }
+            if callState == .thinking || (callState == .speaking && !draining && !audio.speaking) { callState = .listening }
+        case .interrupted:
+            hush()
+            callState = .listening
+            stage.attend("typing", ms: 1_500)
+        case .failed(let message):
+            notice = message
+        case .ended(let reason):
+            endCall()
+            notice = "The call ended — \(reason)."
+        }
+    }
+
+    /// Her voice off the call, a sentence at a time, played in order.
+    private func play(_ wav: Data) {
+        lines.append((gap: 0, fetch: Task<Data?, Never> { wav }))
+        if !draining && !audio.speaking { drain() }
     }
 
     // MARK: By voice

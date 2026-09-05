@@ -177,8 +177,8 @@ final class Talk {
 /// (averaging, so the higher frequencies fold into hiss rather than words)
 /// and written as 16-bit PCM with a 44-byte header. Whisper wants nothing more.
 enum Wav {
-    static func encode(frames: [[Float]], from: Double, to: Double) -> Data {
-        let all = frames.flatMap { $0 }
+    /// The samples at the new rate, box-averaged down, as 16-bit integers.
+    static func resample(_ all: [Float], from: Double, to: Double) -> [Int16] {
         let ratio = from / to
         let count = Int(Double(all.count) / ratio)
         var out = [Int16](repeating: 0, count: max(0, count))
@@ -192,6 +192,19 @@ enum Wav {
             let v = sum / Float(max(1, end - a))
             out[i] = Int16(max(-32768, min(32767, (v * 32767).rounded())))
         }
+        return out
+    }
+
+    /// The same bytes without the header: a stretch of a stream, for the call socket.
+    static func pcm16(_ samples: [Float], from: Double, to: Double) -> Data {
+        let out = resample(samples, from: from, to: to)
+        var data = Data(capacity: out.count * 2)
+        out.withUnsafeBytes { data.append(contentsOf: $0) }
+        return data
+    }
+
+    static func encode(frames: [[Float]], from: Double, to: Double) -> Data {
+        let out = resample(frames.flatMap { $0 }, from: from, to: to)
         var data = Data(capacity: 44 + out.count * 2)
         func u32(_ v: UInt32) { var x = v.littleEndian; withUnsafeBytes(of: &x) { data.append(contentsOf: $0) } }
         func u16(_ v: UInt16) { var x = v.littleEndian; withUnsafeBytes(of: &x) { data.append(contentsOf: $0) } }

@@ -54,6 +54,8 @@ struct WakeWord: Decodable { let line: String?; let emotion: String? }
 struct Nudge: Decodable { let line: String?; let about: String?; let eventId: String? }
 struct Rated: Decodable { let ok: Bool?; let line: String? }
 struct Heard: Decodable { let text: String? }
+/// GET /api/evi/status: whether a call can be placed, and today's allowance.
+struct EviStatus: Decodable { let enabled: Bool?; let minutesToday: Double?; let cap: Double?; let reason: String? }
 struct Staged: Decodable { let attachment: JSONValue }
 struct Okay: Decodable { let ok: Bool? }
 /// For calls whose answer is not needed, only that they went through.

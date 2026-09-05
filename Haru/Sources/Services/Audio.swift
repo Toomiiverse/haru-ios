@@ -23,6 +23,9 @@ final class Audio {
     /// ended, as 16 kHz WAV bytes for her ears.
     var onVoiceStart: (() -> Void)?
     var onVoiceEnd: ((Data) -> Void)?
+    /// The microphone as it comes, while a call is on: 16 kHz PCM16 frames of
+    /// about forty milliseconds, no header, for the call socket.
+    var onFrames: ((Data) -> Void)?
 
     private let engine = AVAudioEngine()
     private let player = AVAudioPlayerNode()
@@ -200,8 +203,16 @@ final class Audio {
 
     private func earSaid(_ heard: Ear.Heard) {
         level = min(1, heard.level * 12)
+        if let frame = heard.frame { onFrames?(frame) }
         if heard.started { onVoiceStart?() }
         if let segment = heard.segment { onVoiceEnd?(segment) }
+    }
+
+    /// Whether the microphone is streamed as frames (a call) as well as
+    /// watched by the detector. The detector runs either way; on a call its
+    /// findings go nowhere, since Hume decides when they have finished.
+    func stream(_ on: Bool) {
+        ear.streaming = on
     }
 
     /// Headphones in, a call over, a Bluetooth speaker gone: the engine needs
@@ -223,7 +234,12 @@ final class Ear: @unchecked Sendable {
         let level: Double
         let started: Bool
         let segment: Data?
+        /// This buffer as 16 kHz PCM16, only while streaming.
+        let frame: Data?
     }
+
+    /// Read racily on the audio thread, on purpose, like herTurn below.
+    var streaming = false
 
     /// While she is talking, and for half a second after: the detector then
     /// wants a much louder and longer sound before it believes anyone else is
@@ -256,7 +272,7 @@ final class Ear: @unchecked Sendable {
     }
 
     func feed(_ buffer: AVAudioPCMBuffer) -> Heard {
-        guard let channels = buffer.floatChannelData else { return Heard(level: 0, started: false, segment: nil) }
+        guard let channels = buffer.floatChannelData else { return Heard(level: 0, started: false, segment: nil, frame: nil) }
         let n = Int(buffer.frameLength)
         let samples = Array(UnsafeBufferPointer(start: channels[0], count: n))
         var sum: Float = 0
@@ -291,6 +307,7 @@ final class Ear: @unchecked Sendable {
                 break
             }
         }
-        return Heard(level: level, started: started, segment: segment)
+        let frame: Data? = streaming ? Wav.pcm16(samples, from: sampleRate, to: 16_000) : nil
+        return Heard(level: level, started: started, segment: segment, frame: frame)
     }
 }

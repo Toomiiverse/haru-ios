@@ -17,6 +17,8 @@ struct MoreView: View {
     @AppStorage("stage.zoom") private var stageZoom = 1.0
     @AppStorage("stage.lift") private var stageLift = 0.0
     @AppStorage("talk.echoCancel") private var echoCancel = true
+    @AppStorage("talk.evi") private var talkEvi = true
+    @State private var evi: EviStatus?
 
     var body: some View {
         NavigationStack {
@@ -64,6 +66,7 @@ struct MoreView: View {
         delivery = await Delivery.current()
         await locator.load()
         await Health.shared.load()
+        evi = try? await session.client.get("/api/evi/status")
         do {
             let info: PushInfo = try await session.client.get("/api/push")
             prefs = info.prefs
@@ -99,11 +102,26 @@ struct MoreView: View {
 
     private var talking: some View {
         Section {
+            Toggle("Call her through Hume", isOn: $talkEvi)
+            LabeledContent("Calls today", value: callLine)
             Toggle("Cancel her echo while listening", isOn: $echoCancel)
         } header: {
             Text("Talking")
         } footer: {
-            Text("On, she can't hear herself through the speaker, so you can talk over her; her voice loses a little clarity. Off, she plays back untouched — best on earphones, where there is no echo to cancel. Takes effect the next time you tap the mic.")
+            Text("Calling on: the mic opens a call — Hume listens, decides when you've finished, lets you talk over her, and speaks in her own voice; her words are still her own. Off: the mic is the ordinary ear — what you say is written down and she answers as she does a message. Typed messages get her usual voice either way. Echo cancelling on: she can't hear herself through the speaker; off is best on earphones. Both take effect the next time you tap the mic.")
+        }
+    }
+
+    private var callLine: String {
+        guard let evi else { return "…" }
+        let used = Int(evi.minutesToday ?? 0), cap = Int(evi.cap ?? 0)
+        if evi.enabled == true { return "\(used) of \(cap) min" }
+        switch evi.reason {
+        case "off": return "switched off on her server"
+        case "not set up": return "not set up on her server"
+        case "asleep": return "she is asleep"
+        case "cap": return "\(used) of \(cap) min — that's the day"
+        default: return "not available"
         }
     }
 

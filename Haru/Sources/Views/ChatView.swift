@@ -66,7 +66,7 @@ struct ChatView: View {
         .onChange(of: nav.wantsTalk, initial: true) { _, wanted in
             guard wanted else { return }
             nav.wantsTalk = false
-            Task { await chat.startTalking() }
+            if !chat.micOn { Task { await chat.toggleMic() } }
         }
         // Typing: she shrinks up out of the way to make room for the talk;
         // done, she is back at full size.
@@ -181,6 +181,13 @@ struct ChatView: View {
     private var state: String {
         if chat.busy { return "thinking…" }
         if chat.transcribing { return "working out what you said…" }
+        switch chat.callState {
+        case .connecting: return "calling…"
+        case .listening: return "on a call"
+        case .thinking: return "thinking…"
+        case .speaking: return "talking"
+        case .off: break
+        }
         if chat.audio.speaking { return "talking" }
         switch chat.talkState {
         case .asleep: return "asleep — say “Hey Haru”"
@@ -227,7 +234,7 @@ struct ChatView: View {
     private var composer: some View {
         VStack(spacing: 6) {
             if !chat.staged.isEmpty { chips }
-            if chat.talkState != .off { talkPill }
+            if chat.talkState != .off || chat.callState != .off { talkPill }
             HStack(alignment: .bottom, spacing: 8) {
                 Menu {
                     Button { showPhotos = true } label: { Label("Photo", systemImage: "photo") }
@@ -254,11 +261,11 @@ struct ChatView: View {
                     .disabled(chat.busy)
                 } else {
                     Button {
-                        if chat.talkState == .off { Task { await chat.startTalking() } } else { chat.stopTalking() }
+                        Task { await chat.toggleMic() }
                     } label: {
-                        Image(systemName: chat.talkState == .off ? "mic.circle" : "mic.circle.fill")
+                        Image(systemName: chat.micOn ? "mic.circle.fill" : "mic.circle")
                             .font(.title)
-                            .foregroundStyle(chat.talkState == .awake ? Color.red : Color.accentColor)
+                            .foregroundStyle(micLit ? Color.red : Color.accentColor)
                     }
                 }
             }
@@ -269,19 +276,29 @@ struct ChatView: View {
     }
 
     /// Where the conversation by voice stands, and how loud the room is.
+    /// Her ear is open for them: the ordinary mode awake, or a call listening.
+    private var micLit: Bool { chat.talkState == .awake || chat.callState == .listening }
+
     private var talkPill: some View {
         HStack(spacing: 10) {
-            Image(systemName: "waveform")
-                .foregroundStyle(chat.talkState == .awake ? .red : .secondary)
-                .symbolEffect(.variableColor.iterative, isActive: chat.talkState == .awake)
+            Image(systemName: chat.callState == .off ? "waveform" : "phone.fill")
+                .foregroundStyle(micLit ? .red : .secondary)
+                .symbolEffect(.variableColor.iterative, isActive: micLit)
             Text(talkLabel).font(.footnote).foregroundStyle(.secondary)
-            ProgressView(value: chat.audio.level).tint(chat.talkState == .awake ? .red : .secondary)
+            ProgressView(value: chat.audio.level).tint(micLit ? .red : .secondary)
         }
         .padding(.horizontal, 12)
     }
 
     private var talkLabel: String {
         let echo = chat.audio.echoCancelled ? "" : " · no echo cancelling"
+        switch chat.callState {
+        case .connecting: return "Calling her…"
+        case .listening: return "On a call — just talk" + echo
+        case .thinking: return "Thinking…"
+        case .speaking: return "Speaking… talk over her to cut in"
+        case .off: break
+        }
         switch chat.talkState {
         case .asleep: return "Say “Hey Haru”" + echo
         case .awake: return "Listening…" + echo
