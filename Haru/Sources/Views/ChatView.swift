@@ -353,7 +353,7 @@ struct ChatView: View {
         // transcript back into the box after the box has been cleared, so the
         // words just sent sit there as if unsent (2026-09-06). Ending the input
         // session first commits them; the box is then read whole and emptied.
-        if UITextInputMode.current?.primaryLanguage == "dictation" {
+        if UITextInputMode.current()?.primaryLanguage == "dictation" {
             typing = false
             try? await Task.sleep(for: .milliseconds(150))
             typing = true
