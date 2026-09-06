@@ -9,6 +9,9 @@ struct ChatView: View {
     @Environment(Navigator.self) private var nav
     @Environment(\.scenePhase) private var phase
     @State private var draft = ""
+    /// What was just sent and when, so a dictation transcript that lands in
+    /// the box after the send is known for what it is.
+    @State private var lastSent: (text: String, at: Date)?
     @State private var showPhotos = false
     @State private var showFiles = false
     @State private var showCamera = false
@@ -264,6 +267,13 @@ struct ChatView: View {
                 TextField("Say something", text: $draft, axis: .vertical)
                     .lineLimit(1...6)
                     .onChange(of: draft) { _, now in
+                        // The words just sent, back in the box within a minute:
+                        // dictation writing its transcript late. Cleared, and only
+                        // ever those words — a short exact repeat is left alone.
+                        if let last = lastSent, now == last.text, last.text.count >= 12, Date().timeIntervalSince(last.at) < 90 {
+                            draft = ""
+                            return
+                        }
                         if !now.isEmpty { chat.stage.attend("typing", ms: 1_800) }
                     }
                     .padding(.horizontal, 12)
@@ -353,22 +363,16 @@ struct ChatView: View {
         // transcript back into the box after the box has been cleared, so the
         // words just sent sit there as if unsent (2026-09-06). Ending the input
         // session first commits them; the box is then read whole and emptied.
-        if UITextInputMode.current()?.primaryLanguage == "dictation" {
+        if Responding.first?.textInputMode?.primaryLanguage == "dictation" {
             typing = false
             try? await Task.sleep(for: .milliseconds(150))
             typing = true
         }
         let text = draft
         draft = ""
+        lastSent = (text, Date())
         let sent = await chat.send(text)
-        if !sent { draft = text; return }
-        // And if the transcript landed late anyway, the same words are cleared
-        // again — never anything else, in case they have started the next one.
-        if draft == text { draft = "" }
-        Task { @MainActor in
-            try? await Task.sleep(for: .seconds(1))
-            if draft == text { draft = "" }
-        }
+        if !sent { lastSent = nil; draft = text }
     }
 
     /// Straight off the camera: the same JPEG, sized the same way, as a picture
@@ -527,4 +531,21 @@ extension UIImage {
             draw(in: CGRect(origin: .zero, size: target))
         }
     }
+}
+
+/// The first responder, found the one way UIKit allows from here: an action
+/// sent to nobody lands on it, and it reports itself.
+@MainActor
+private enum Responding {
+    private static weak var found: UIResponder?
+    static var first: UIResponder? {
+        found = nil
+        UIApplication.shared.sendAction(#selector(UIResponder.haruReportFirstResponder), to: nil, from: nil, for: nil)
+        return found
+    }
+    static func note(_ responder: UIResponder) { found = responder }
+}
+
+extension UIResponder {
+    @objc fileprivate func haruReportFirstResponder() { Responding.note(self) }
 }
