@@ -1,5 +1,6 @@
 import PhotosUI
 import SwiftUI
+import UIKit
 import UniformTypeIdentifiers
 
 struct ChatView: View {
@@ -348,10 +349,26 @@ struct ChatView: View {
     // MARK: Doing things
 
     private func sendDraft() async {
+        // Dictation still running when send is tapped writes its final
+        // transcript back into the box after the box has been cleared, so the
+        // words just sent sit there as if unsent (2026-09-06). Ending the input
+        // session first commits them; the box is then read whole and emptied.
+        if UITextInputMode.current?.primaryLanguage == "dictation" {
+            typing = false
+            try? await Task.sleep(for: .milliseconds(150))
+            typing = true
+        }
         let text = draft
         draft = ""
         let sent = await chat.send(text)
-        if !sent { draft = text }
+        if !sent { draft = text; return }
+        // And if the transcript landed late anyway, the same words are cleared
+        // again — never anything else, in case they have started the next one.
+        if draft == text { draft = "" }
+        Task { @MainActor in
+            try? await Task.sleep(for: .seconds(1))
+            if draft == text { draft = "" }
+        }
     }
 
     /// Straight off the camera: the same JPEG, sized the same way, as a picture
