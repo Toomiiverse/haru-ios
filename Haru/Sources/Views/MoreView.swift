@@ -17,7 +17,6 @@ struct MoreView: View {
     @AppStorage("stage.zoom") private var stageZoom = 1.0
     @AppStorage("stage.lift") private var stageLift = 0.0
     @AppStorage("talk.echoCancel") private var echoCancel = true
-    @AppStorage("talk.evi") private var talkEvi = true
     @State private var evi: EviStatus?
 
     var body: some View {
@@ -109,13 +108,12 @@ struct MoreView: View {
 
     private var talking: some View {
         Section {
-            Toggle("The mic places a call", isOn: $talkEvi)
             LabeledContent("Calls", value: callLine)
             Toggle("Cancel her echo while listening", isOn: $echoCancel)
         } header: {
             Text("Talking")
         } footer: {
-            Text("On: the mic opens a call — she listens, decides when you've finished, lets you talk over her, and answers in her own voice a sentence at a time; her words are her own. Off: the mic is the ordinary ear — what you say is written down and she answers as she does a message. Typed messages get her usual voice either way. Echo cancelling on: she can't hear herself through the speaker; off is best on earphones. Both take effect the next time you tap the mic.")
+            Text("Tap the mic and ask: she listens for one question, writes it down and answers as she does a message, in her voice, and the mic closes itself. Hold the mic for a call: she listens, decides when you've finished, lets you talk over her, and answers a sentence at a time. Typed messages get her usual voice either way. Echo cancelling on: she can't hear herself through the speaker; off is best on earphones.")
         }
     }
 

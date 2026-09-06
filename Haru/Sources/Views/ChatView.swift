@@ -287,13 +287,18 @@ struct ChatView: View {
                     }
                     .disabled(chat.busy)
                 } else {
-                    Button {
-                        Task { await chat.toggleMic() }
-                    } label: {
-                        Image(systemName: chat.micOn ? "mic.circle.fill" : "mic.circle")
-                            .font(.title)
-                            .foregroundStyle(micLit ? Color.red : Color.accentColor)
-                    }
+                    // A tap: one question through her ears, mic off after.
+                    // A hold: a call.
+                    Image(systemName: chat.micOn ? "mic.circle.fill" : "mic.circle")
+                        .font(.title)
+                        .foregroundStyle(micLit ? Color.red : Color.accentColor)
+                        .contentShape(Rectangle())
+                        .onTapGesture { Task { await chat.toggleMic() } }
+                        .onLongPressGesture(minimumDuration: 0.45) {
+                            UIImpactFeedbackGenerator(style: .medium).impactOccurred()
+                            Task { await chat.holdMic() }
+                        }
+                        .accessibilityLabel(chat.micOn ? "Stop listening" : "Ask her something; hold for a call")
                 }
             }
             .padding(.horizontal, 12)
@@ -328,7 +333,7 @@ struct ChatView: View {
         }
         switch chat.talkState {
         case .asleep: return "Say “Hey Haru”" + echo
-        case .awake: return "Listening…" + echo
+        case .awake: return (chat.askingOnce ? "Listening — ask her one thing" : "Listening…") + echo
         case .thinking: return "Thinking…"
         case .speaking: return "Speaking… talk over her to cut in"
         case .off: return ""

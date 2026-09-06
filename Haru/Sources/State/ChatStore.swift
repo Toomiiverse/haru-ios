@@ -82,6 +82,9 @@ final class ChatStore {
         }
         audio.onVoiceStart = { [weak self] in
             guard let self, let talk = self.talk else { return }
+            // Asked for one thing and they have started saying it: the window
+            // opens again from here, so it cannot close on them mid-sentence.
+            if self.askingOnce, talk.state == .awake { self.act(talk.start(self.now, awake: true)) }
             self.act(talk.voiceStarted(self.now))
             if talk.state != .asleep { self.stage.attend("typing", ms: 1_500) }
         }
@@ -453,26 +456,54 @@ final class ChatStore {
     /// Whether the mic button is lit: a call, or the ordinary talk mode.
     var micOn: Bool { call != nil || talk != nil }
 
-    /// The user's choice in More: the mic opens a call through Hume when the
-    /// server can place one, else the ordinary talk mode. On by default.
-    private var prefersCall: Bool {
-        UserDefaults.standard.object(forKey: "talk.evi") as? Bool ?? true
-    }
-
     func refreshEvi() async {
         eviStatus = try? await client.get("/api/evi/status")
     }
 
-    /// The mic button. Off if anything is on; else a call if the phone wants
-    /// one and she can take it, else the ordinary ear.
+    /// Whether the ear is open for one question only — a tap — and closes
+    /// itself once that question is on its way, or when nothing was said.
+    private(set) var askingOnce = false
+    /// How long a tap waits for the question before the ear closes on its own.
+    private static let askOnceMs = 10_000.0
+
+    /// A tap on the mic. Off if anything is on; else her ears for one question
+    /// — she listens, writes it down, answers as she does a message, in her
+    /// voice, and the mic closes itself. Hands free: no keyboard, no dictation.
     func toggleMic() async {
         if call != nil { endCall(); return }
         if talk != nil { stopTalking(); return }
-        if prefersCall {
-            await refreshEvi()
-            if eviStatus?.enabled == true { await startCall(); return }
+        await askOnce()
+    }
+
+    /// Holding the mic: a call, where she can take one.
+    func holdMic() async {
+        if call != nil { endCall(); return }
+        if talk != nil { stopTalking() }
+        await refreshEvi()
+        guard eviStatus?.enabled == true else {
+            notice = "She can't take a call right now — \(callReason)."
+            return
         }
+        await startCall()
+    }
+
+    private var callReason: String {
+        switch eviStatus?.reason {
+        case "off": return "calls are switched off on her server"
+        case "not set up": return "calls are not set up on her server"
+        case "asleep": return "she is asleep"
+        case "cap": return "that's the day's allowance"
+        default: return "not available"
+        }
+    }
+
+    func askOnce() async {
+        guard call == nil, talk == nil else { return }
+        // Tapped while she is talking: they have something to ask over it.
+        if audio.speaking { hush() }
+        askingOnce = true
         await startTalking()
+        if talk == nil { askingOnce = false }
     }
 
     /// Places the call: the microphone streams up as it comes, and Hume does
@@ -611,6 +642,7 @@ final class ChatStore {
             return
         }
         let talk = Talk()
+        if askingOnce { talk.awakeMs = Self.askOnceMs }
         self.talk = talk
         act(talk.start(now, awake: true))
         ticker = Timer.scheduledTimer(withTimeInterval: 1, repeats: true) { [weak self] _ in
@@ -623,6 +655,7 @@ final class ChatStore {
 
     func stopTalking() {
         guard let talk else { return }
+        askingOnce = false
         act(talk.stop())
         self.talk = nil
         ticker?.invalidate()
@@ -649,9 +682,11 @@ final class ChatStore {
     }
 
     private func act(_ actions: [TalkAction]) {
+        var asked = false
         for action in actions {
             switch action {
             case .say(let text, let interrupted):
+                asked = true
                 Task { await send(text, spokeOver: interrupted) }
             case .ack:
                 Task { await acknowledge() }
@@ -662,6 +697,9 @@ final class ChatStore {
             }
         }
         talkState = talk?.state ?? .off
+        // One question: the mic closes once it is on its way, or once the
+        // window has passed with nothing said. Her answer needs no ear.
+        if askingOnce, asked || talkState == .asleep { stopTalking() }
     }
 
     /// Her name and nothing else: a word from her, in a mood, and an open ear.
