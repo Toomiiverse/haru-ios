@@ -33,6 +33,13 @@ struct MoreView: View {
                     NavigationLink("What she remembers") { MemoryView() }
                 }
                 Section {
+                    NavigationLink("What she mishears") { HearingView() }
+                } header: {
+                    Text("Her ears")
+                } footer: {
+                    Text("Long-press one of your own bubbles when she gets a word wrong. She keeps the difference.")
+                }
+                Section {
                     LabeledContent("Her address", value: session.baseURLString)
                     Button("Sign out", role: .destructive) { Task { await session.signOut() } }
                 } header: {

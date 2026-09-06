@@ -396,6 +396,7 @@ struct EntryView: View {
     let entry: Entry
     let isLast: Bool
     @Environment(ChatStore.self) private var chat
+    @State private var teaching = false
 
     var body: some View {
         switch entry.kind {
@@ -423,6 +424,15 @@ struct EntryView: View {
             .padding(.vertical, 10)
             .background(Color.accentColor.opacity(0.85), in: RoundedRectangle(cornerRadius: 18))
             .foregroundStyle(.white)
+            // What she heard is what is in the bubble; when it is wrong, this
+            // is where she is told. Offered on every bubble of theirs, since
+            // only they know which ones were spoken.
+            .contextMenu {
+                if !entry.text.isEmpty {
+                    Button { teaching = true } label: { Label("She misheard me", systemImage: "ear") }
+                }
+            }
+            .sheet(isPresented: $teaching) { TeachSheet(heard: entry.text) }
         }
     }
 

@@ -58,6 +58,12 @@ struct Heard: Decodable { let text: String? }
 struct EviStatus: Decodable { let enabled: Bool?; let engine: String?; let minutesToday: Double?; let cap: Double?; let reason: String? }
 struct Staged: Decodable { let attachment: JSONValue }
 struct Okay: Decodable { let ok: Bool? }
+/// POST /api/hearing: the pair she kept from a correction, if there was one to keep.
+struct HearingTaught: Decodable { let learned: HearingPair?; let count: Int? }
+struct HearingPair: Decodable { let heard: String; let meant: String }
+/// GET /api/hearing: what she has been taught she mishears, and how often each has fired.
+struct HearingPage: Decodable { let corrections: [HearingRule] }
+struct HearingRule: Decodable, Identifiable { let heard: String; let meant: String; let used: Int?; var id: String { heard } }
 /// For calls whose answer is not needed, only that they went through.
 struct Ignored: Decodable {}
 /// POST /api/chat's answer: her line, or nothing when she let it pass.

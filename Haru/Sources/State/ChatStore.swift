@@ -394,6 +394,25 @@ final class ChatStore {
         }
     }
 
+    // MARK: Her ears
+
+    /// What she heard against what was said. She keeps the word that differs
+    /// and rewrites it on every take from now on, calls included.
+    func teach(heard: String, meant: String) async {
+        do {
+            let taught: HearingTaught = try await client.post("/api/hearing", ["heard": .string(heard), "meant": .string(meant)])
+            if let pair = taught.learned {
+                notice = "She'll hear “\(pair.heard)” as “\(pair.meant)” from now on."
+            } else {
+                notice = "Nothing to learn from that — the sentences are the same, or too different to pin on a word."
+            }
+        } catch HaruError.signedOut {
+            session.signedIn = false
+        } catch {
+            notice = error.localizedDescription
+        }
+    }
+
     // MARK: Her speaking first
 
     /// Asked on opening, when the app comes back, and every few minutes while it
