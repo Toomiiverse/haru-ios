@@ -36,6 +36,7 @@ struct HaruApp: App {
                 locator.wake()
                 Shared.publish(base: session.client.base)
                 Health.shared.wake()
+                Reminders.shared.wake()
                 Push.register()
                 Task { await Push.sync(session) }
             default: break

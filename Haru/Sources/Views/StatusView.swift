@@ -89,6 +89,7 @@ struct StatusView: View {
     private func tickOff(_ id: String) async {
         let _: AgendaPage? = try? await session.client.post("/api/agenda/done", ["id": .string(id)])
         await load()
+        await Reminders.shared.sync(force: true)
     }
 }
 

@@ -55,6 +55,9 @@ targets:
         NSHealthShareUsageDescription: "So she can notice how you slept and how far you walked, if you let her. Off unless you switch it on."
         # Required by Apple beside the read string whenever the HealthKit entitlement is present; the app never writes.
         NSHealthUpdateUsageDescription: "Haru only reads. Nothing is written to Health."
+        # Her list mirrored into a "Haru" list in Reminders, both ways (Reminders.swift). Off unless you switch it on.
+        NSRemindersFullAccessUsageDescription: "To keep her list in Reminders: a Haru list that matches hers, both ways. Off unless you switch it on."
+        NSRemindersUsageDescription: "To keep her list in Reminders: a Haru list that matches hers, both ways. Off unless you switch it on."
         BGTaskSchedulerPermittedIdentifiers:
           - com.toomiiverse.haru.refresh
         UIBackgroundModes:

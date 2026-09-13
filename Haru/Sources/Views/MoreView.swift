@@ -28,6 +28,7 @@ struct MoreView: View {
                 delivered
                 whereabouts
                 health
+                reminders
                 Section("Her memory") {
                     NavigationLink("What she remembers") { MemoryView() }
                 }
@@ -50,9 +51,9 @@ struct MoreView: View {
             .navigationTitle("More")
             .refreshable { await load() }
             .alert("Haru", isPresented: problemShown) {
-                Button("OK") { problem = nil; locator.problem = nil; Health.shared.problem = nil }
+                Button("OK") { problem = nil; locator.problem = nil; Health.shared.problem = nil; Reminders.shared.problem = nil }
             } message: {
-                Text(problem ?? locator.problem ?? Health.shared.problem ?? "")
+                Text(problem ?? locator.problem ?? Health.shared.problem ?? Reminders.shared.problem ?? "")
             }
         }
         .task { await load() }
@@ -64,14 +65,15 @@ struct MoreView: View {
     }
 
     private var problemShown: Binding<Bool> {
-        Binding(get: { problem != nil || locator.problem != nil || Health.shared.problem != nil },
-                set: { if !$0 { problem = nil; locator.problem = nil; Health.shared.problem = nil } })
+        Binding(get: { problem != nil || locator.problem != nil || Health.shared.problem != nil || Reminders.shared.problem != nil },
+                set: { if !$0 { problem = nil; locator.problem = nil; Health.shared.problem = nil; Reminders.shared.problem = nil } })
     }
 
     private func load() async {
         delivery = await Delivery.current()
         await locator.load()
         await Health.shared.load()
+        await Reminders.shared.load()
         evi = try? await session.client.get("/api/evi/status")
         do {
             let info: PushInfo = try await session.client.get("/api/push")
@@ -148,6 +150,25 @@ struct MoreView: View {
             Text("Her eye on you")
         } footer: {
             Text("Last night's sleep and today's steps, from Apple Health, sent to her server as two numbers whenever Health has something new — with the app closed too. She gets one background sentence out of it, enough to notice a short night. Off unless you switch it on; Health asks its own permission.")
+        }
+    }
+
+    // MARK: Her list, in Reminders
+
+    private var reminders: some View {
+        let reminders = Reminders.shared
+        return Section {
+            Toggle("Keep her list in Reminders", isOn: Binding(
+                get: { reminders.enabled },
+                set: { on in Task { await reminders.setEnabled(on) } }
+            ))
+            if reminders.enabled {
+                LabeledContent("Last mirrored", value: reminders.lastSyncLine)
+            }
+        } header: {
+            Text("Her list, in Reminders")
+        } footer: {
+            Text("A list called Haru in Apple Reminders that matches hers, both ways: what you ask her to remind you of shows up there, with an alarm when she was told a time; a reminder you add to that list, or tick off there, reaches her. Events stay in Calendar.")
         }
     }
 

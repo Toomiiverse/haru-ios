@@ -42,6 +42,8 @@ enum Refresh {
             if let line = nudge.line, !line.isEmpty {
                 await notify(line, kind: nudge.eventId != nil || nudge.about != nil ? "events" : "random", eventId: nudge.eventId)
             }
+            // While we are awake anyway: her list and the Reminders list, brought level.
+            await Reminders.shared.sync(force: true)
             return true
         } catch {
             return false

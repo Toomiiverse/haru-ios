@@ -133,6 +133,20 @@ The app answers `haru://` links, for Shortcuts, the Action button and Safari:
 `haru://chat`, `haru://talk` (opens the chat and starts listening),
 `haru://status`, `haru://diary`, `haru://her`, `haru://more`.
 
+## Her list in Apple Reminders
+
+Under More, **Keep her list in Reminders** makes a list called *Haru* in the
+Reminders app that matches hers, both ways. Tasks from `GET /api/agenda`
+appear there with their day, and an alarm when she was told a time; a
+reminder you add to that list reaches her through `POST /api/agenda`; ticking
+one off on either side ticks it off on the other (`POST /api/agenda/done`),
+and deleting one from the phone counts as done. Events stay in Calendar. It
+runs when the app comes to the front, on a background refresh, after a
+tick-off in Status, and whenever Reminders reports a change while the app is
+open. This has to live in the app: iCloud stopped exposing reminder lists over
+CalDAV with the iOS 13 Reminders upgrade, so the server cannot write them.
+`Services/Reminders.swift`; the id mapping lives in UserDefaults.
+
 ## What is not here yet
 
 - **Real push notifications, until the APNs key is installed.** The server
