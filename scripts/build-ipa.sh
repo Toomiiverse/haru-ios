@@ -23,8 +23,11 @@ command -v xcodegen >/dev/null || brew install xcodegen
 # against the sums they had when the feature was built.
 SHERPA_URL=https://github.com/k2-fsa/sherpa-onnx/releases/download/xcframework/sherpa-onnx-v1.13.8-ios-shared-onnxruntime-static.xcframework.zip
 SHERPA_SHA=e259a7d3b38ad7dec49bb078252a30bb42ede8355e2bb130cf8c1c78ed131f75
-KWS_URL=https://github.com/k2-fsa/sherpa-onnx/releases/download/kws-models/sherpa-onnx-kws-zipformer-gigaspeech-3.3M-2024-01-01-mobile.tar.bz2
-KWS_SHA=2e6ac2577310bfa2f4b6b5fab0478b868c9d0b2cb2c51b3e13b50581b588864d
+# The plain gigaspeech release, not its -mobile variant: the mobile encoder fails
+# in sherpa-onnx 1.13.8 on the first decode (ONNX Reshape {17,1,128} to
+# {8,2,1,128} in /downsample), which on the phone is a crash. Found offline.
+KWS_URL=https://github.com/k2-fsa/sherpa-onnx/releases/download/kws-models/sherpa-onnx-kws-zipformer-gigaspeech-3.3M-2024-01-01.tar.bz2
+KWS_SHA=f170013b4716e41b62b9bfd809687c207cef798ef9bc6534d524e17af9b6561a
 fetch() { # url, file, sha256
   [ -f "$2" ] || curl -fsSL --retry 3 -o "$2" "$1"
   echo "$3  $2" | shasum -a 256 -c -
