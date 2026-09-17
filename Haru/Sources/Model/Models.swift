@@ -55,7 +55,11 @@ struct Nudge: Decodable { let line: String?; let about: String?; let eventId: St
 struct Rated: Decodable { let ok: Bool?; let line: String? }
 struct Heard: Decodable { let text: String? }
 /// GET /api/evi/status: whether a call can be placed, and today's allowance.
-struct EviStatus: Decodable { let enabled: Bool?; let engine: String?; let minutesToday: Double?; let cap: Double?; let reason: String? }
+struct EviStatus: Decodable {
+    let enabled: Bool?; let engine: String?; let minutesToday: Double?; let cap: Double?; let reason: String?
+    /// Her sleep, for standby: asleep now, and when she wakes (ISO 8601) if she is.
+    let asleep: Bool?; let wakesAt: String?
+}
 struct Staged: Decodable { let attachment: JSONValue }
 struct Okay: Decodable { let ok: Bool? }
 /// POST /api/hearing: the pair she kept from a correction, if there was one to keep.

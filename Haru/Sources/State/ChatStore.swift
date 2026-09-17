@@ -92,6 +92,11 @@ final class ChatStore {
     private var lastCallActivity = Date()
     private var idleWatch: Timer?
     private var batteryWatcher: NSObjectProtocol?
+    /// Standby while she sleeps: the ear stays open (iOS would not open it
+    /// again with the phone locked) but her name goes unheard until she wakes.
+    private(set) var standbyAsleep = false
+    private var sleepWatch: Timer?
+    private var wakeAlarm: Timer?
 
     init(session: Session) {
         self.session = session
@@ -568,6 +573,7 @@ final class ChatStore {
 
     /// Hangs up, from this end or because the far end did.
     func endCall() {
+        defer { if standby { Task { await refreshEvi(); applySleep() } } }
         guard let call else { return }
         audio.stream(false)
         call.stop()
@@ -677,6 +683,9 @@ final class ChatStore {
         if !on {
             standby = false
             standbyPaused = false
+            standbyAsleep = false
+            sleepWatch?.invalidate(); sleepWatch = nil
+            wakeAlarm?.invalidate(); wakeAlarm = nil
             audio.spot(nil)
             if call == nil, talk == nil { try? audio.listen(false) }
             updateDocked()
@@ -709,6 +718,7 @@ final class ChatStore {
         standbyPaused = false
         watchBattery()
         updateDocked()
+        startSleepWatch()
     }
 
     /// The app is open again: standby back on if it was wanted, and listening
@@ -723,13 +733,14 @@ final class ChatStore {
     var standbyLine: String {
         if !standby { return "off" }
         if standbyPaused { return "paused — open Haru to listen again" }
+        if standbyAsleep { return "she's asleep" + (wakesAtLine.map { " — until \($0)" } ?? "") }
         if call != nil { return "on a call" }
         return "listening for “Hey Haru”"
     }
 
     /// Her name, heard on the phone. A chime so they know, then the call.
     private func woken() async {
-        guard standby, !standbyPaused, call == nil, talk == nil, !audio.speaking, !busy, enrolling == nil else { return }
+        guard standby, !standbyPaused, !standbyAsleep, call == nil, talk == nil, !audio.speaking, !busy, enrolling == nil else { return }
         // Whose voice: the two seconds around the phrase against his takes.
         if onlyMyVoice, let gate, gate.isEnrolled {
             let (samples, rate) = audio.recent(seconds: 2)
@@ -740,13 +751,14 @@ final class ChatStore {
                 return
             }
         }
-        audio.chime()
-        stage.attend("thinking", ms: 3_000)
         await refreshEvi()
-        guard eviStatus?.enabled == true else {
-            notice = "She heard her name, but can't take a call right now — \(callReason)."
+        applySleep()
+        guard eviStatus?.enabled == true, !standbyAsleep else {
+            if !standbyAsleep { notice = "She heard her name, but can't take a call right now — \(callReason)." }
             return
         }
+        audio.chime()
+        stage.attend("thinking", ms: 3_000)
         callFromStandby = true
         await startCall()
         guard call != nil else {
@@ -847,6 +859,50 @@ final class ChatStore {
             enrolOpenedEar = false
             onlyMyVoice = true
             notice = "She knows your voice now. Only you wake her."
+        }
+    }
+
+    // Her sleep, while standby is on: asked every few minutes (the open
+    // microphone keeps the app running, so a timer fires even locked) and once
+    // more at her wake time, so she is back listening within a minute of it.
+    private static let sleepWatchEvery: TimeInterval = 5 * 60
+
+    private func startSleepWatch() {
+        sleepWatch?.invalidate()
+        sleepWatch = Timer.scheduledTimer(withTimeInterval: Self.sleepWatchEvery, repeats: true) { [weak self] _ in
+            Task { @MainActor in
+                guard let self, self.standby else { return }
+                await self.refreshEvi()
+                self.applySleep()
+            }
+        }
+        Task { await refreshEvi(); applySleep() }
+    }
+
+    private var wakesAtLine: String? {
+        guard let text = eviStatus?.wakesAt, let date = ISO8601DateFormatter.withFractions.date(from: text) ?? ISO8601DateFormatter().date(from: text) else { return nil }
+        return date.formatted(date: .omitted, time: .shortened)
+    }
+
+    /// Detaches or reattaches the spotter to match her sleep; nothing else changes.
+    private func applySleep() {
+        guard standby else { return }
+        let asleep = eviStatus?.asleep == true
+        if asleep != standbyAsleep {
+            standbyAsleep = asleep
+            audio.spot(asleep ? nil : wake)
+            if !asleep { wake?.reset() }
+        }
+        wakeAlarm?.invalidate(); wakeAlarm = nil
+        if asleep, let text = eviStatus?.wakesAt, let at = ISO8601DateFormatter.withFractions.date(from: text) ?? ISO8601DateFormatter().date(from: text) {
+            let delay = max(30, at.timeIntervalSinceNow + 45)
+            wakeAlarm = Timer.scheduledTimer(withTimeInterval: delay, repeats: false) { [weak self] _ in
+                Task { @MainActor in
+                    guard let self, self.standby else { return }
+                    await self.refreshEvi()
+                    self.applySleep()
+                }
+            }
         }
     }
 
@@ -984,4 +1040,14 @@ final class ChatStore {
             if let talk { act(talk.spokeEnd(now)) }
         }
     }
+}
+
+
+extension ISO8601DateFormatter {
+    /// The server's dates carry milliseconds; the plain formatter refuses them.
+    static let withFractions: ISO8601DateFormatter = {
+        let f = ISO8601DateFormatter()
+        f.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+        return f
+    }()
 }

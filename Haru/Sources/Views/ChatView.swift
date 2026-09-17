@@ -345,7 +345,9 @@ struct ChatView: View {
         case .off: break
         }
         if chat.standby {
-            return chat.standbyPaused ? "Standby paused — reopen the app to listen" : "Standby — say “Hey Haru”, even locked"
+            if chat.standbyPaused { return "Standby paused — reopen the app to listen" }
+            if chat.standbyAsleep { return "Standby — \(chat.standbyLine)" }
+            return "Standby — say “Hey Haru”, even locked"
         }
         return ""
     }
