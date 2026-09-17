@@ -742,7 +742,7 @@ final class ChatStore {
     private func woken() async {
         guard standby, !standbyPaused, !standbyAsleep, call == nil, talk == nil, !audio.speaking, !busy, enrolling == nil else { return }
         // Whose voice: the two seconds around the phrase against his takes.
-        if onlyMyVoice, let gate, gate.isEnrolled {
+        if onlyMyVoice, let gate = loadedGate(), gate.isEnrolled {
             let (samples, rate) = audio.recent(seconds: 2)
             guard let vector = await gate.embedding(samples, rate: rate) else { return }
             let score = gate.score(vector)
@@ -792,11 +792,16 @@ final class ChatStore {
         set { UserDefaults.standard.set(newValue, forKey: "voice.onlyMine") }
     }
 
-    var voiceTakes: Int { gate?.enrolled.count ?? 0 }
-    var voiceKnown: Bool { gate?.isEnrolled ?? false }
-    var voiceGateAvailable: Bool {
+    var voiceTakes: Int { loadedGate()?.enrolled.count ?? 0 }
+    var voiceKnown: Bool { loadedGate()?.isEnrolled ?? false }
+    var voiceGateAvailable: Bool { loadedGate() != nil }
+
+    /// The gate, loaded on first need with the takes it saved. It used to be
+    /// made only by enrolment, so a relaunch or an update showed "not taught"
+    /// and — worse — standby skipped the check and woke for anyone (build 58).
+    private func loadedGate() -> VoiceGate? {
         if gate == nil { gate = VoiceGate() }
-        return gate != nil
+        return gate
     }
 
     /// Teaching her: the ear opens (if it is not already), and the next few
@@ -804,8 +809,7 @@ final class ChatStore {
     /// sent to her server for the wake-word model of his voice.
     func startEnrolment() async {
         guard enrolling == nil else { return }
-        if gate == nil { gate = VoiceGate() }
-        guard gate != nil else {
+        guard loadedGate() != nil else {
             notice = "Her ears for voices are missing from this build."
             return
         }
@@ -835,12 +839,12 @@ final class ChatStore {
     }
 
     func forgetVoice() {
-        gate?.forget()
+        loadedGate()?.forget()
         strangerWakes = 0
     }
 
     private func enrolTake(_ wav: Data) async {
-        guard let count = enrolling, let gate, let (samples, rate) = VoiceGate.samples(ofWav: [UInt8](wav)) else { return }
+        guard let count = enrolling, let gate = loadedGate(), let (samples, rate) = VoiceGate.samples(ofWav: [UInt8](wav)) else { return }
         let seconds = Double(samples.count) / rate
         // A take is her name and little else: under half a second is a cough,
         // over four is a sentence.
