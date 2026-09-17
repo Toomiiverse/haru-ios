@@ -45,6 +45,13 @@ for f in encoder-epoch-12-avg-2-chunk-16-left-64.int8.onnx decoder-epoch-12-avg-
          joiner-epoch-12-avg-2-chunk-16-left-64.int8.onnx tokens.txt; do
   cp "Vendor/kws-model/$f" Haru/Resources/kws/
 done
+# Whose voice said her name (VoiceGate.swift): a speaker-embedding model from
+# the same project, beside the spotter's files. (The release tag really is
+# spelled "recongition".)
+SPK_MODEL=3dspeaker_speech_eres2net_sv_en_voxceleb_16k.onnx
+SPK_SHA=c59158379255ad66e161679cca6af8d52d51e389e3224ab7d7a7baae295c2db5
+fetch "https://github.com/k2-fsa/sherpa-onnx/releases/download/speaker-recongition-models/$SPK_MODEL" "Vendor/$SPK_MODEL" "$SPK_SHA"
+cp "Vendor/$SPK_MODEL" Haru/Resources/kws/
 
 xcodegen generate
 

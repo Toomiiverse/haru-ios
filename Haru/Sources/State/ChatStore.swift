@@ -79,6 +79,13 @@ final class ChatStore {
     private var callReply = ""
     private var callReplyID: String?
     private var wake: WakeSpotter?
+    private var gate: VoiceGate?
+    /// Teaching her his voice: takes so far, nil when not.
+    private(set) var enrolling: Int?
+    private var enrolOpenedEar = false
+    /// Wakes in another voice she let pass, since launch; for the More screen.
+    private(set) var strangerWakes = 0
+    var strangerLine: String { strangerWakes == 0 ? "" : "\(strangerWakes) in another voice ignored" }
     /// This call came from her name in standby, so it hangs itself up when the
     /// talking stops — nobody is holding a phone to end it.
     private var callFromStandby = false
@@ -106,6 +113,7 @@ final class ChatStore {
         }
         audio.onVoiceEnd = { [weak self] wav in
             guard let self else { return }
+            if self.enrolling != nil { Task { await self.enrolTake(wav) }; return }
             Task { await self.hear(wav) }
         }
         audio.onFrames = { [weak self] pcm in self?.call?.send(pcm) }
@@ -721,7 +729,17 @@ final class ChatStore {
 
     /// Her name, heard on the phone. A chime so they know, then the call.
     private func woken() async {
-        guard standby, !standbyPaused, call == nil, talk == nil, !audio.speaking, !busy else { return }
+        guard standby, !standbyPaused, call == nil, talk == nil, !audio.speaking, !busy, enrolling == nil else { return }
+        // Whose voice: the two seconds around the phrase against his takes.
+        if onlyMyVoice, let gate, gate.isEnrolled {
+            let (samples, rate) = audio.recent(seconds: 2)
+            guard let vector = await gate.embedding(samples, rate: rate) else { return }
+            let score = gate.score(vector)
+            if score < VoiceGate.threshold {
+                strangerWakes += 1
+                return
+            }
+        }
         audio.chime()
         stage.attend("thinking", ms: 3_000)
         await refreshEvi()
@@ -752,6 +770,84 @@ final class ChatStore {
             return
         }
         if Date().timeIntervalSince(lastCallActivity) > Self.standbyCallIdle { endCall() }
+    }
+
+    // MARK: His voice
+
+    /// Whether only his voice wakes her. On by default once she has been taught it.
+    var onlyMyVoice: Bool {
+        get { UserDefaults.standard.object(forKey: "voice.onlyMine") as? Bool ?? true }
+        set { UserDefaults.standard.set(newValue, forKey: "voice.onlyMine") }
+    }
+
+    var voiceTakes: Int { gate?.enrolled.count ?? 0 }
+    var voiceKnown: Bool { gate?.isEnrolled ?? false }
+    var voiceGateAvailable: Bool {
+        if gate == nil { gate = VoiceGate() }
+        return gate != nil
+    }
+
+    /// Teaching her: the ear opens (if it is not already), and the next few
+    /// stretches of speech are his "Hey Haru", each kept as a voice print and
+    /// sent to her server for the wake-word model of his voice.
+    func startEnrolment() async {
+        guard enrolling == nil else { return }
+        if gate == nil { gate = VoiceGate() }
+        guard gate != nil else {
+            notice = "Her ears for voices are missing from this build."
+            return
+        }
+        guard await Audio.allowed() else {
+            notice = "The microphone is switched off for Haru in Settings."
+            return
+        }
+        if call != nil { endCall() }
+        if talk != nil { stopTalking() }
+        if !audio.listening {
+            audio.echoCancelling = UserDefaults.standard.object(forKey: "talk.echoCancel") as? Bool ?? true
+            do { try audio.listen(true) } catch {
+                notice = "The microphone would not start: \(error.localizedDescription)"
+                return
+            }
+            enrolOpenedEar = true
+        }
+        gate?.forget()
+        enrolling = 0
+    }
+
+    func cancelEnrolment() {
+        guard enrolling != nil else { return }
+        enrolling = nil
+        if enrolOpenedEar, !standby { try? audio.listen(false) }
+        enrolOpenedEar = false
+    }
+
+    func forgetVoice() {
+        gate?.forget()
+        strangerWakes = 0
+    }
+
+    private func enrolTake(_ wav: Data) async {
+        guard let count = enrolling, let gate, let (samples, rate) = VoiceGate.samples(ofWav: [UInt8](wav)) else { return }
+        let seconds = Double(samples.count) / rate
+        // A take is her name and little else: under half a second is a cough,
+        // over four is a sentence.
+        guard seconds >= 0.5, seconds <= 4 else { return }
+        guard let vector = await gate.embedding(samples, rate: rate) else { return }
+        guard enrolling == count else { return }
+        gate.enrol(vector)
+        enrolling = count + 1
+        Task {
+            // For the wake-word model of his voice, trained on her server. Best effort.
+            let _: Ignored? = try? await client.upload("/api/voice/enrol", data: wav, type: "audio/wav")
+        }
+        if count + 1 >= VoiceGate.takes {
+            enrolling = nil
+            if enrolOpenedEar, !standby { try? audio.listen(false) }
+            enrolOpenedEar = false
+            onlyMyVoice = true
+            notice = "She knows your voice now. Only you wake her."
+        }
     }
 
     private func resumeStandby(notifyIfNot: Bool) {

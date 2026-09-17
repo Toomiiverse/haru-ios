@@ -292,6 +292,12 @@ final class Audio {
         ear.setSpotter(wake)
     }
 
+    /// The last `seconds` the microphone heard, at its own rate — the voice
+    /// that just said her name, for the gate (VoiceGate).
+    func recent(seconds: Double) -> (samples: [Float], rate: Double) {
+        ear.recent(seconds: seconds)
+    }
+
     /// Two short rising tones: she heard her name, the call is coming.
     func chime() {
         let rate = 16_000.0
@@ -383,6 +389,26 @@ final class Ear: @unchecked Sendable {
         vad.endAfterMs = 600
         ring = []
         ringSamples = 0
+    }
+
+    /// The tail of the ring, newest last: what was said just now.
+    func recent(seconds: Double) -> (samples: [Float], rate: Double) {
+        lock.lock()
+        defer { lock.unlock() }
+        let want = Int(sampleRate * seconds)
+        var parts: [[Float]] = []
+        var have = 0
+        var i = ring.count - 1
+        while i >= 0, have < want {
+            parts.append(ring[i].samples)
+            have += ring[i].samples.count
+            i -= 1
+        }
+        var out: [Float] = []
+        out.reserveCapacity(have)
+        for part in parts.reversed() { out.append(contentsOf: part) }
+        if out.count > want { out.removeFirst(out.count - want) }
+        return (out, sampleRate)
     }
 
     func feed(_ buffer: AVAudioPCMBuffer) -> Heard {
