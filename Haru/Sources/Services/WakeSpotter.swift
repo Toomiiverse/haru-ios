@@ -12,7 +12,7 @@ import SherpaOnnxC
 /// Every call into the C side happens on `queue`; the audio thread only hands
 /// buffers over. The spotter copies its configuration, so the strings given to
 /// it need to live only as long as the call that creates it.
-final class WakeWord: @unchecked Sendable {
+final class WakeSpotter: @unchecked Sendable {
     /// The phrase as the model's own pieces (its bpe.model says "HEY HARU" is
     /// these four), with the boost it gets while decoding and the probability
     /// it must reach to count.

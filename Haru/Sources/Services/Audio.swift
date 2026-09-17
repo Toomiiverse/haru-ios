@@ -288,7 +288,7 @@ final class Audio {
 
     /// Her name, listened for on the phone: every microphone buffer goes to it
     /// while no call is streaming. Nil stops it.
-    func spot(_ wake: WakeWord?) {
+    func spot(_ wake: WakeSpotter?) {
         ear.setSpotter(wake)
     }
 
@@ -346,10 +346,10 @@ final class Ear: @unchecked Sendable {
     /// Read racily on the audio thread, on purpose, like herTurn below.
     var streaming = false
 
-    /// Listening for her name (WakeWord), under the lock: a class reference
+    /// Listening for her name (WakeSpotter), under the lock: a class reference
     /// swapped while the audio thread reads it is not a race to leave in.
-    private var spotter: WakeWord?
-    func setSpotter(_ wake: WakeWord?) {
+    private var spotter: WakeSpotter?
+    func setSpotter(_ wake: WakeSpotter?) {
         lock.lock()
         spotter = wake
         lock.unlock()

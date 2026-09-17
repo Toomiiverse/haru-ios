@@ -17,7 +17,7 @@ xcodebuild -version
 
 command -v xcodegen >/dev/null || brew install xcodegen
 
-# Her ears for "Hey Haru" in standby (Services/WakeWord.swift): sherpa-onnx as
+# Her ears for "Hey Haru" in standby (Services/WakeSpotter.swift): sherpa-onnx as
 # one dynamic framework with ONNX Runtime linked in, and its small English
 # keyword-spotting model. Fetched here rather than kept in git, and checked
 # against the sums they had when the feature was built.

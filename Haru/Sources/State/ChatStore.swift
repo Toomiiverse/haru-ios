@@ -78,7 +78,7 @@ final class ChatStore {
     /// Her reply on the call, as it arrives a sentence at a time, and its bubble.
     private var callReply = ""
     private var callReplyID: String?
-    private var wake: WakeWord?
+    private var wake: WakeSpotter?
     /// This call came from her name in standby, so it hangs itself up when the
     /// talking stops — nobody is holding a phone to end it.
     private var callFromStandby = false
@@ -680,7 +680,7 @@ final class ChatStore {
             UserDefaults.standard.set(false, forKey: "standby.on")
             return
         }
-        if wake == nil { wake = WakeWord() }
+        if wake == nil { wake = WakeSpotter() }
         guard let wake else {
             notice = "Her ears for “Hey Haru” are missing from this build."
             UserDefaults.standard.set(false, forKey: "standby.on")

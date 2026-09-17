@@ -27,7 +27,7 @@ targets:
       - path: Haru/Resources
         excludes:
           - "kws/**"
-      # The "Hey Haru" model (WakeWord.swift), put here by scripts/build-ipa.sh:
+      # The "Hey Haru" model (WakeSpotter.swift), put here by scripts/build-ipa.sh:
       # a folder reference, so it lands in the bundle as kws/ with its names.
       - path: Haru/Resources/kws
         type: folder
@@ -75,7 +75,7 @@ targets:
     dependencies:
       - target: HaruWidget
       - target: HaruShare
-      # sherpa-onnx, fetched by scripts/build-ipa.sh — see WakeWord.swift.
+      # sherpa-onnx, fetched by scripts/build-ipa.sh — see WakeSpotter.swift.
       - framework: Vendor/SherpaOnnxC.xcframework
         embed: true
     settings:
