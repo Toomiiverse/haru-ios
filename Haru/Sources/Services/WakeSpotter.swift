@@ -15,8 +15,13 @@ import SherpaOnnxC
 final class WakeSpotter: @unchecked Sendable {
     /// The phrase as the model's own pieces (its bpe.model says "HEY HARU" is
     /// these four), with the boost it gets while decoding and the probability
-    /// it must reach to count.
-    static let keywords = "▁HE Y ▁HA RU :1.5 #0.2 @HEY_HARU"
+    /// it must reach to count. Measured offline (2026-09-17, seven synthetic
+    /// voices, an hour of real speech): boost 2 / threshold 0.05 hears 64% of
+    /// clean "Hey Haru" clips against 44% at 1.5 / 0.2, and two and a half
+    /// times as many from a voice 12 dB quieter — the 60 cm problem — for one
+    /// near miss ("Hey, hurry up") in 378 and no false wakes in the hour.
+    /// Spelling variants of "Haru" and a gain stage in front both hurt.
+    static let keywords = "▁HE Y ▁HA RU :2.0 #0.05 @HEY_HARU"
 
     /// Where the model files are in the bundle: a folder reference, kept whole.
     static let folder = "kws"
