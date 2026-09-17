@@ -14,13 +14,15 @@ final class Navigator {
     var tab: Tab = .chat
     /// Set by haru://talk; the chat screen opens the ear and clears it.
     var wantsTalk = false
+    /// Set by haru://call and the Call Haru shortcut; the chat screen places the call.
+    var wantsCall = false
 
     /// A tapped notification: a reminder lands on the list, anything else on the chat.
     func openPush(kind: String?) {
         tab = kind == "events" ? .status : .chat
     }
 
-    /// haru://chat, haru://talk, haru://status, haru://diary, haru://her, haru://more.
+    /// haru://chat, haru://talk, haru://call, haru://status, haru://diary, haru://her, haru://more.
     func open(_ url: URL) {
         guard url.scheme?.lowercased() == "haru" else { return }
         let where_ = (url.host(percentEncoded: false) ?? url.path.trimmingCharacters(in: CharacterSet(charactersIn: "/"))).lowercased()
@@ -28,6 +30,9 @@ final class Navigator {
         case "talk":
             tab = .chat
             wantsTalk = true
+        case "call":
+            tab = .chat
+            wantsCall = true
         case "status": tab = .status
         case "diary": tab = .diary
         case "her": tab = .her

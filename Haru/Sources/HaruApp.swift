@@ -39,6 +39,7 @@ struct HaruApp: App {
                 Reminders.shared.wake()
                 Push.register()
                 Task { await Push.sync(session) }
+                Task { await chat.standbyOnActive() }
             default: break
             }
         }

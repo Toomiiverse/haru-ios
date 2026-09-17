@@ -1,5 +1,7 @@
 import Foundation
 import Observation
+import UIKit
+import UserNotifications
 
 /// One bubble group on screen. Her replies split on blank lines into the
 /// bubbles she would have sent; an aside is one bubble with a mark down its side.
@@ -55,6 +57,12 @@ final class ChatStore {
     private(set) var callFiller: String?
     /// Whether a call can be placed, from the server; nil until asked.
     private(set) var eviStatus: EviStatus?
+    /// Standby: the microphone open with the phone locked, listening on the
+    /// phone for "Hey Haru" and nothing else, and a call when she hears it.
+    private(set) var standby = false
+    /// Standby is on but not listening: something else took the microphone,
+    /// and iOS would not give it back while the phone was locked.
+    private(set) var standbyPaused = false
 
     let session: Session
     let audio = Audio()
@@ -70,6 +78,13 @@ final class ChatStore {
     /// Her reply on the call, as it arrives a sentence at a time, and its bubble.
     private var callReply = ""
     private var callReplyID: String?
+    private var wake: WakeWord?
+    /// This call came from her name in standby, so it hangs itself up when the
+    /// talking stops — nobody is holding a phone to end it.
+    private var callFromStandby = false
+    private var lastCallActivity = Date()
+    private var idleWatch: Timer?
+    private var batteryWatcher: NSObjectProtocol?
 
     init(session: Session) {
         self.session = session
@@ -81,6 +96,7 @@ final class ChatStore {
             self.drain()
         }
         audio.onVoiceStart = { [weak self] in
+            self?.lastCallActivity = Date()
             guard let self, let talk = self.talk else { return }
             // Asked for one thing and they have started saying it: the window
             // opens again from here, so it cannot close on them mid-sentence.
@@ -93,6 +109,15 @@ final class ChatStore {
             Task { await self.hear(wav) }
         }
         audio.onFrames = { [weak self] pcm in self?.call?.send(pcm) }
+        audio.onInterruption = { [weak self] began, _ in
+            guard let self, self.standby else { return }
+            if began {
+                self.standbyPaused = true
+                if self.call != nil { self.endCall() }
+            } else {
+                self.resumeStandby(notifyIfNot: true)
+            }
+        }
     }
 
     private var client: HaruClient { session.client }
@@ -540,7 +565,12 @@ final class ChatStore {
         call.stop()
         self.call = nil
         hush()
-        try? audio.listen(false)
+        // In standby the microphone stays open — iOS will not start it again
+        // with the phone locked — and goes back to listening for her name.
+        if standby { wake?.reset() } else { try? audio.listen(false) }
+        callFromStandby = false
+        idleWatch?.invalidate()
+        idleWatch = nil
         callState = .off
         callFiller = nil
         callReply = ""
@@ -549,6 +579,12 @@ final class ChatStore {
 
     private func handleCall(_ event: EviCall.Event) {
         guard call != nil else { return }
+        switch event {
+        case .heard, .said, .filler, .voiceStart, .pcm, .interrupted:
+            lastCallActivity = Date()
+        default:
+            break
+        }
         switch event {
         case .ready:
             callState = .listening
@@ -623,6 +659,136 @@ final class ChatStore {
         if !draining && !audio.speaking { drain() }
     }
 
+    // MARK: Standby
+
+    /// Switched on or off from More. On needs the app open: iOS lets a
+    /// recording that began in the foreground carry on with the phone locked,
+    /// but never lets one begin there.
+    func setStandby(_ on: Bool) async {
+        UserDefaults.standard.set(on, forKey: "standby.on")
+        if !on {
+            standby = false
+            standbyPaused = false
+            audio.spot(nil)
+            if call == nil, talk == nil { try? audio.listen(false) }
+            updateDocked()
+            return
+        }
+        guard !standby else { return }
+        guard await Audio.allowed() else {
+            notice = "The microphone is switched off for Haru in Settings."
+            UserDefaults.standard.set(false, forKey: "standby.on")
+            return
+        }
+        if wake == nil { wake = WakeWord() }
+        guard let wake else {
+            notice = "Her ears for “Hey Haru” are missing from this build."
+            UserDefaults.standard.set(false, forKey: "standby.on")
+            return
+        }
+        wake.onWake = { [weak self] in Task { await self?.woken() } }
+        audio.echoCancelling = UserDefaults.standard.object(forKey: "talk.echoCancel") as? Bool ?? true
+        do {
+            try audio.listen(true)
+        } catch {
+            notice = "The microphone would not start: \(error.localizedDescription)"
+            UserDefaults.standard.set(false, forKey: "standby.on")
+            return
+        }
+        wake.reset()
+        audio.spot(wake)
+        standby = true
+        standbyPaused = false
+        watchBattery()
+        updateDocked()
+    }
+
+    /// The app is open again: standby back on if it was wanted, and listening
+    /// again if something had taken the microphone.
+    func standbyOnActive() async {
+        let wanted = UserDefaults.standard.bool(forKey: "standby.on")
+        if wanted, !standby { await setStandby(true); return }
+        if standby, standbyPaused || !audio.listening { resumeStandby(notifyIfNot: false) }
+        updateDocked()
+    }
+
+    var standbyLine: String {
+        if !standby { return "off" }
+        if standbyPaused { return "paused — open Haru to listen again" }
+        if call != nil { return "on a call" }
+        return "listening for “Hey Haru”"
+    }
+
+    /// Her name, heard on the phone. A chime so they know, then the call.
+    private func woken() async {
+        guard standby, !standbyPaused, call == nil, talk == nil, !audio.speaking, !busy else { return }
+        audio.chime()
+        stage.attend("thinking", ms: 3_000)
+        await refreshEvi()
+        guard eviStatus?.enabled == true else {
+            notice = "She heard her name, but can't take a call right now — \(callReason)."
+            return
+        }
+        callFromStandby = true
+        await startCall()
+        guard call != nil else {
+            callFromStandby = false
+            return
+        }
+        lastCallActivity = Date()
+        idleWatch?.invalidate()
+        idleWatch = Timer.scheduledTimer(withTimeInterval: 5, repeats: true) { [weak self] _ in
+            Task { @MainActor in self?.hangUpIfIdle() }
+        }
+    }
+
+    /// Nobody has said anything for a while, and she is not talking or
+    /// thinking: the call from standby ends, and standby listens again.
+    private static let standbyCallIdle: TimeInterval = 45
+    private func hangUpIfIdle() {
+        guard callFromStandby, call != nil else { return }
+        if audio.speaking || draining || callState == .thinking || callState == .speaking || callState == .connecting {
+            lastCallActivity = Date()
+            return
+        }
+        if Date().timeIntervalSince(lastCallActivity) > Self.standbyCallIdle { endCall() }
+    }
+
+    private func resumeStandby(notifyIfNot: Bool) {
+        guard standby else { return }
+        do {
+            try audio.reopen()
+            wake?.reset()
+            standbyPaused = false
+        } catch {
+            standbyPaused = true
+            guard notifyIfNot, UIApplication.shared.applicationState != .active else { return }
+            let content = UNMutableNotificationContent()
+            content.title = "Haru stopped listening"
+            content.body = "Something else took the microphone. Open Haru to put standby back on."
+            content.threadIdentifier = "haru-standby"
+            let request = UNNotificationRequest(identifier: "haru-standby-paused", content: content, trigger: nil)
+            UNUserNotificationCenter.current().add(request)
+        }
+    }
+
+    /// Docked: on the charger with standby on, the screen stays awake, so the
+    /// app stays in front and nothing about listening depends on the lock.
+    private func updateDocked() {
+        let state = UIDevice.current.batteryState
+        UIApplication.shared.isIdleTimerDisabled = standby && (state == .charging || state == .full)
+    }
+
+    private func watchBattery() {
+        UIDevice.current.isBatteryMonitoringEnabled = true
+        guard batteryWatcher == nil else { return }
+        batteryWatcher = NotificationCenter.default.addObserver(
+            forName: UIDevice.batteryStateDidChangeNotification, object: nil, queue: .main
+        ) { [weak self] _ in
+            Task { @MainActor in self?.updateDocked() }
+        }
+    }
+
     // MARK: By voice
 
     /// Opens the ear. Awake from the start: the tap is already her name. From
@@ -660,7 +826,7 @@ final class ChatStore {
         self.talk = nil
         ticker?.invalidate()
         ticker = nil
-        try? audio.listen(false)
+        if !standby { try? audio.listen(false) }
     }
 
     /// A stretch of their voice, through her ears on the server, then to the

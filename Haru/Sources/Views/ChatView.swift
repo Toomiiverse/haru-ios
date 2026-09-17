@@ -76,6 +76,12 @@ struct ChatView: View {
             nav.wantsTalk = false
             if !chat.micOn { Task { await chat.toggleMic() } }
         }
+        // haru://call — the Call Haru shortcut, a Vocal Shortcut: straight into a call.
+        .onChange(of: nav.wantsCall, initial: true) { _, wanted in
+            guard wanted else { return }
+            nav.wantsCall = false
+            if chat.call == nil { Task { await chat.holdMic() } }
+        }
         // Typing: she shrinks up out of the way to make room for the talk;
         // done, she is back at full size.
         .onChange(of: typing) { _, now in
@@ -251,7 +257,7 @@ struct ChatView: View {
     private var composer: some View {
         VStack(spacing: 6) {
             if !chat.staged.isEmpty { chips }
-            if chat.talkState != .off || chat.callState != .off { talkPill }
+            if chat.talkState != .off || chat.callState != .off || chat.standby { talkPill }
             HStack(alignment: .bottom, spacing: 8) {
                 Menu {
                     if CameraPicker.available {
@@ -336,8 +342,12 @@ struct ChatView: View {
         case .awake: return (chat.askingOnce ? "Listening — ask her one thing" : "Listening…") + echo
         case .thinking: return "Thinking…"
         case .speaking: return "Speaking… talk over her to cut in"
-        case .off: return ""
+        case .off: break
         }
+        if chat.standby {
+            return chat.standbyPaused ? "Standby paused — reopen the app to listen" : "Standby — say “Hey Haru”, even locked"
+        }
+        return ""
     }
 
     private var chips: some View {

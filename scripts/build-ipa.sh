@@ -16,6 +16,33 @@ fi
 xcodebuild -version
 
 command -v xcodegen >/dev/null || brew install xcodegen
+
+# Her ears for "Hey Haru" in standby (Services/WakeWord.swift): sherpa-onnx as
+# one dynamic framework with ONNX Runtime linked in, and its small English
+# keyword-spotting model. Fetched here rather than kept in git, and checked
+# against the sums they had when the feature was built.
+SHERPA_URL=https://github.com/k2-fsa/sherpa-onnx/releases/download/xcframework/sherpa-onnx-v1.13.8-ios-shared-onnxruntime-static.xcframework.zip
+SHERPA_SHA=e259a7d3b38ad7dec49bb078252a30bb42ede8355e2bb130cf8c1c78ed131f75
+KWS_URL=https://github.com/k2-fsa/sherpa-onnx/releases/download/kws-models/sherpa-onnx-kws-zipformer-gigaspeech-3.3M-2024-01-01-mobile.tar.bz2
+KWS_SHA=2e6ac2577310bfa2f4b6b5fab0478b868c9d0b2cb2c51b3e13b50581b588864d
+fetch() { # url, file, sha256
+  [ -f "$2" ] || curl -fsSL --retry 3 -o "$2" "$1"
+  echo "$3  $2" | shasum -a 256 -c -
+}
+mkdir -p Vendor
+fetch "$SHERPA_URL" Vendor/sherpa-onnx.xcframework.zip "$SHERPA_SHA"
+rm -rf Vendor/SherpaOnnxC.xcframework
+unzip -q Vendor/sherpa-onnx.xcframework.zip -d Vendor
+test -d Vendor/SherpaOnnxC.xcframework || { echo "No SherpaOnnxC.xcframework in the sherpa-onnx zip" >&2; exit 1; }
+fetch "$KWS_URL" Vendor/kws.tar.bz2 "$KWS_SHA"
+rm -rf Vendor/kws-model Haru/Resources/kws
+mkdir -p Vendor/kws-model Haru/Resources/kws
+tar -xjf Vendor/kws.tar.bz2 -C Vendor/kws-model --strip-components 1
+for f in encoder-epoch-12-avg-2-chunk-16-left-64.int8.onnx decoder-epoch-12-avg-2-chunk-16-left-64.onnx \
+         joiner-epoch-12-avg-2-chunk-16-left-64.int8.onnx tokens.txt; do
+  cp "Vendor/kws-model/$f" Haru/Resources/kws/
+done
+
 xcodegen generate
 
 # Signed, and straight to TestFlight, when the App Store Connect key is in the

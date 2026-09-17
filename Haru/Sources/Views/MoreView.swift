@@ -8,6 +8,7 @@ extension PushPrefs {
 struct MoreView: View {
     @Environment(Session.self) private var session
     @Environment(Locator.self) private var locator
+    @Environment(ChatStore.self) private var chat
     @Environment(\.scenePhase) private var phase
     @State private var delivery: Delivery?
     @State private var prefs = PushPrefs.blank
@@ -111,11 +112,16 @@ struct MoreView: View {
     private var talking: some View {
         Section {
             LabeledContent("Calls", value: callLine)
+            Toggle("Standby: “Hey Haru” with the phone locked", isOn: Binding(
+                get: { chat.standby },
+                set: { on in Task { await chat.setStandby(on) } }
+            ))
+            if chat.standby { LabeledContent("Standby", value: chat.standbyLine) }
             Toggle("Cancel her echo while listening", isOn: $echoCancel)
         } header: {
             Text("Talking")
         } footer: {
-            Text("Tap the mic and ask: she listens for one question, writes it down and answers as she does a message, in her voice, and the mic closes itself. Hold the mic for a call: she listens, decides when you've finished, lets you talk over her, and answers a sentence at a time. Typed messages get her usual voice either way. Echo cancelling on: she can't hear herself through the speaker; off is best on earphones.")
+            Text("Tap the mic and ask: she listens for one question, writes it down and answers as she does a message, in her voice, and the mic closes itself. Hold the mic for a call: she listens, decides when you've finished, lets you talk over her, and answers a sentence at a time. Typed messages get her usual voice either way. Echo cancelling on: she can't hear herself through the speaker; off is best on earphones.\n\nStandby: switch it on here, then lock the phone. She listens on the phone itself for “Hey Haru” — nothing is sent anywhere until she hears it — then chimes and takes a call, and hangs up after 45 seconds of quiet. It uses battery while it is on and shows the microphone light. A phone call or Siri pauses it; open Haru to start it again. On the charger the screen stays awake.\n\nWith standby off: the Call Haru shortcut, given a Vocal Shortcut (“Hey Haru”) under Settings › Accessibility, opens her in a call — after Face ID if the phone is locked.")
         }
     }
 

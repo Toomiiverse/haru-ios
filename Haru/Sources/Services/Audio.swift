@@ -26,6 +26,9 @@ final class Audio {
     /// The microphone as it comes, while a call is on: 16 kHz PCM16 frames of
     /// about forty milliseconds, no header, for the call socket.
     var onFrames: ((Data) -> Void)?
+    /// Something else took the audio — a phone call, Siri, an alarm — or gave
+    /// it back. `shouldResume` is iOS saying listening may start again.
+    var onInterruption: ((_ began: Bool, _ shouldResume: Bool) -> Void)?
 
     private let engine = AVAudioEngine()
     private let player = AVAudioPlayerNode()
@@ -34,6 +37,7 @@ final class Audio {
     private var playEndsAt: TimeInterval = 0
     private var mouthTapOn = false
     private var configurationWatcher: NSObjectProtocol?
+    private var interruptionWatcher: NSObjectProtocol?
 
     init() {
         engine.attach(player)
@@ -41,6 +45,15 @@ final class Audio {
             forName: .AVAudioEngineConfigurationChange, object: engine, queue: .main
         ) { [weak self] _ in
             Task { @MainActor in self?.routeChanged() }
+        }
+        interruptionWatcher = NotificationCenter.default.addObserver(
+            forName: AVAudioSession.interruptionNotification, object: nil, queue: .main
+        ) { [weak self] note in
+            let info = note.userInfo
+            guard let raw = info?[AVAudioSessionInterruptionTypeKey] as? UInt,
+                  let kind = AVAudioSession.InterruptionType(rawValue: raw) else { return }
+            let options = (info?[AVAudioSessionInterruptionOptionKey] as? UInt).map(AVAudioSession.InterruptionOptions.init(rawValue:)) ?? []
+            Task { @MainActor in self?.onInterruption?(kind == .began, options.contains(.shouldResume)) }
         }
     }
 
@@ -264,6 +277,35 @@ final class Audio {
         if wasSpeaking { onFinished?() }
     }
 
+    /// Opens the ear again after something else had the audio, even though the
+    /// session still thinks it is listening. Throws when iOS will not have it —
+    /// with the phone locked it often will not, and only the app open again can.
+    func reopen() throws {
+        listening = false
+        engine.inputNode.removeTap(onBus: 0)
+        try listen(true)
+    }
+
+    /// Her name, listened for on the phone: every microphone buffer goes to it
+    /// while no call is streaming. Nil stops it.
+    func spot(_ wake: WakeWord?) {
+        ear.setSpotter(wake)
+    }
+
+    /// Two short rising tones: she heard her name, the call is coming.
+    func chime() {
+        let rate = 16_000.0
+        var samples: [Float] = []
+        for (frequency, seconds) in [(784.0, 0.07), (1_175.0, 0.11)] {
+            let count = Int(rate * seconds)
+            for i in 0..<count {
+                let fade = min(1, Double(min(i, count - i)) / (rate * 0.01))
+                samples.append(Float(sin(2 * .pi * frequency * Double(i) / rate) * 0.25 * fade))
+            }
+        }
+        play(Wav.encode(frames: [samples], from: rate, to: rate))
+    }
+
     private func earSaid(_ heard: Ear.Heard) {
         level = min(1, heard.level * 12)
         if let frame = heard.frame { onFrames?(frame) }
@@ -303,6 +345,15 @@ final class Ear: @unchecked Sendable {
 
     /// Read racily on the audio thread, on purpose, like herTurn below.
     var streaming = false
+
+    /// Listening for her name (WakeWord), under the lock: a class reference
+    /// swapped while the audio thread reads it is not a race to leave in.
+    private var spotter: WakeWord?
+    func setSpotter(_ wake: WakeWord?) {
+        lock.lock()
+        spotter = wake
+        lock.unlock()
+    }
 
     /// While she is talking, and for half a second after: the detector then
     /// wants a much louder and longer sound before it believes anyone else is
@@ -345,6 +396,8 @@ final class Ear: @unchecked Sendable {
 
         lock.lock()
         defer { lock.unlock() }
+        // Not on a call: the call's own ear is on the server.
+        if !streaming, let spotter { spotter.feed(samples, rate: sampleRate) }
         ring.append((t, samples))
         ringSamples += n
         let cap = Int(sampleRate * 20)

@@ -68,6 +68,23 @@ struct TalkToHaruIntent: AppIntent {
     }
 }
 
+/// The app, open on the chat, in a call — what a Vocal Shortcut is for:
+/// Settings › Accessibility › Vocal Shortcuts, the phrase "Hey Haru", this.
+/// With the phone locked it asks for Face ID first; that is iOS, and why
+/// standby exists for the locked phone.
+struct CallHaruIntent: AppIntent {
+    static let title: LocalizedStringResource = "Call Haru"
+    static let description = IntentDescription("Open Haru straight into a call. Give it a Vocal Shortcut, like “Hey Haru”, under Settings › Accessibility.")
+    static let openAppWhenRun = true
+
+    @MainActor
+    func perform() async throws -> some IntentResult {
+        Navigator.shared.tab = .chat
+        Navigator.shared.wantsCall = true
+        return .result()
+    }
+}
+
 /// How she is right now, in a sentence Siri can say.
 struct HowIsHaruIntent: AppIntent {
     static let title: LocalizedStringResource = "How Is Haru"
@@ -134,9 +151,15 @@ struct HaruShortcuts: AppShortcutsProvider {
         )
         AppShortcut(
             intent: TalkToHaruIntent(),
-            phrases: ["Talk to \(.applicationName)", "Call \(.applicationName)", "Open \(.applicationName) and listen"],
+            phrases: ["Talk to \(.applicationName)", "Open \(.applicationName) and listen"],
             shortTitle: "Talk to Haru",
             systemImageName: "mic.fill"
+        )
+        AppShortcut(
+            intent: CallHaruIntent(),
+            phrases: ["Call \(.applicationName)", "Ring \(.applicationName)", "Start a call with \(.applicationName)"],
+            shortTitle: "Call Haru",
+            systemImageName: "phone.fill"
         )
         AppShortcut(
             intent: HowIsHaruIntent(),

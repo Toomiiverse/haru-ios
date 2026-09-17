@@ -25,6 +25,14 @@ targets:
       - path: Haru/Sources
       - path: Haru/Assets.xcassets
       - path: Haru/Resources
+        excludes:
+          - "kws/**"
+      # The "Hey Haru" model (WakeWord.swift), put here by scripts/build-ipa.sh:
+      # a folder reference, so it lands in the bundle as kws/ with its names.
+      - path: Haru/Resources/kws
+        type: folder
+        buildPhase: resources
+        optional: true
     info:
       path: Haru/Info.plist
       properties:
@@ -67,6 +75,9 @@ targets:
     dependencies:
       - target: HaruWidget
       - target: HaruShare
+      # sherpa-onnx, fetched by scripts/build-ipa.sh — see WakeWord.swift.
+      - framework: Vendor/SherpaOnnxC.xcframework
+        embed: true
     settings:
       base:
         # Apple registered the App ID with the Team ID as a suffix (2026-09-04);

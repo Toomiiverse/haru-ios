@@ -8,3 +8,6 @@ Payload/
 *.ipa
 xcuserdata/
 .DS_Store
+# Fetched by scripts/build-ipa.sh: sherpa-onnx and the "Hey Haru" model.
+Vendor/
+Haru/Resources/kws/
