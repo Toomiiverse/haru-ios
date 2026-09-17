@@ -298,8 +298,21 @@ final class Audio {
         ear.recent(seconds: seconds)
     }
 
-    /// Two short rising tones: she heard her name, the call is coming.
+    /// She heard her name: one of her own breaths — a "hmph", a soft "hmmm",
+    /// a soft laugh — before the call opens. Hers, in her voice, rather than a
+    /// tone. The clips are the ones her sighs come from (Resources/wake).
     func chime() {
+        let names = ["wake-hmph", "wake-hmmm", "wake-laugh"]
+        if let name = names.randomElement(), let url = Bundle.main.url(forResource: name, withExtension: "wav"),
+           let data = try? Data(contentsOf: url) {
+            play(data)
+            return
+        }
+        tones()
+    }
+
+    /// Two short rising tones: the wake sound when no breath is in the bundle.
+    private func tones() {
         let rate = 16_000.0
         var samples: [Float] = []
         for (frequency, seconds) in [(784.0, 0.07), (1_175.0, 0.11)] {
