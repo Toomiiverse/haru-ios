@@ -18,6 +18,9 @@ struct MoreView: View {
     @AppStorage("stage.zoom") private var stageZoom = 1.0
     @AppStorage("stage.lift") private var stageLift = 0.0
     @AppStorage("talk.echoCancel") private var echoCancel = true
+    /// Live.swift reads the same key.
+    @AppStorage("live.on") private var liveOn = true
+    @State private var alarmOn = WakeAlarm.on
     @State private var evi: EviStatus?
 
     var body: some View {
@@ -120,6 +123,8 @@ struct MoreView: View {
                 LabeledContent("Standby", value: chat.standbyLine)
                 LabeledContent("Her ears", value: chat.wakeEngine)
             }
+            Toggle("On the lock screen while she listens", isOn: $liveOn)
+                .onChange(of: liveOn) { _, _ in chat.refreshLive() }
             Toggle("Cancel her echo while listening", isOn: $echoCancel)
             if let take = chat.enrolling {
                 LabeledContent("Say “Hey Haru”", value: "take \(take + 1) of \(VoiceGate.takes)")
@@ -223,13 +228,33 @@ struct MoreView: View {
             ))
             if !prefs.upBy.isEmpty {
                 DatePicker("Up by", selection: time(\.upBy), displayedComponents: .hourAndMinute)
+                if WakeAlarm.supported {
+                    Toggle("Ring like an alarm, in her voice", isOn: Binding(
+                        get: { alarmOn },
+                        set: { on in
+                            alarmOn = on
+                            Task {
+                                if let said = await WakeAlarm.set(on, upBy: prefs.upBy, client: session.client) { problem = said }
+                                alarmOn = WakeAlarm.on
+                            }
+                        }
+                    ))
+                }
             }
         } header: {
             Text("When she speaks first")
         } footer: {
-            Text("These are her rules for pestering you, shared with the desktop. She reaches this phone through Apple's push, so expect her whether the app is open or not. A Focus can hold her too: Settings → Focus → the one you want → Add Filter → Haru.")
+            Text("These are her rules for pestering you, shared with the desktop. She reaches this phone through Apple's push, so expect her whether the app is open or not. A Focus can hold her too: Settings → Focus → the one you want → Add Filter → Haru. A thing on her list comes through a Focus all the same. “Ring like an alarm” (iOS 26) sets a real alarm on this phone for the Up-by hour, every day: it rings on silent and through any Focus, saying her line until you tap “I'm up”, and it rings whether or not her server can be reached.")
         }
         .disabled(!prefsLoaded)
+        // The hour moved, or "Wake me up" went off: the alarm follows.
+        .onChange(of: prefs.upBy) { _, upBy in
+            guard prefsLoaded, WakeAlarm.on else { return }
+            Task {
+                if let said = await WakeAlarm.follow(upBy: upBy, client: session.client) { problem = said }
+                alarmOn = WakeAlarm.on
+            }
+        }
     }
 
     /// What iOS actually does with hers — read from the phone, since the rules

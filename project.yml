@@ -59,6 +59,13 @@ targets:
         UIUserInterfaceStyle: Dark
         UIApplicationSupportsIndirectInputEvents: true
         ITSAppUsesNonExemptEncryption: false
+        # Her ear on the lock screen and in the Dynamic Island (Services/Live.swift).
+        NSSupportsLiveActivities: true
+        # Her pushes arrive as messages from her (HaruNotify): iOS wants the intent named here.
+        NSUserActivityTypes:
+          - INSendMessageIntent
+        # "Ring like an alarm" under More (WakeAlarm.swift, iOS 26).
+        NSAlarmKitUsageDescription: "To wake you at the hour you set, in her voice, even on silent."
         # haru://chat, haru://talk, haru://status … — for Shortcuts, the Action
         # button and Safari. Handled in HaruApp (onOpenURL → Navigator).
         CFBundleURLTypes:
@@ -87,6 +94,7 @@ targets:
     dependencies:
       - target: HaruWidget
       - target: HaruShare
+      - target: HaruNotify
       - package: LiveKitWakeWord
         product: LiveKitWakeWord
       # sherpa-onnx, fetched by scripts/build-ipa.sh — see WakeSpotter.swift.
@@ -134,6 +142,8 @@ targets:
       - path: Haru/Sources/Model/Shared.swift
       # The controls' intents run in the app but are declared to both (Controls.swift).
       - path: Haru/Sources/Intents/ControlIntents.swift
+      # What the Live Activity shows; the app keeps it, the extension draws it.
+      - path: Haru/Sources/Model/LiveStatus.swift
     info:
       path: HaruWidget/Info.plist
       properties:
@@ -185,6 +195,32 @@ targets:
         PRODUCT_NAME: HaruShare
         CODE_SIGN_STYLE: Automatic
         CODE_SIGN_ENTITLEMENTS: HaruShare/HaruShare.entitlements
+        DEVELOPMENT_TEAM: "$(DEVELOPMENT_TEAM)"
+        GENERATE_INFOPLIST_FILE: "NO"
+        SKIP_INSTALL: "YES"
+        SUPPORTS_MACCATALYST: "NO"
+  # Every push passes through here first and comes out as a message from her
+  # (NotificationService.swift). No App Group: see Portrait there.
+  HaruNotify:
+    type: app-extension
+    platform: iOS
+    sources:
+      - path: HaruNotify/Sources
+    info:
+      path: HaruNotify/Info.plist
+      properties:
+        CFBundleDisplayName: Haru
+        CFBundleName: HaruNotify
+        CFBundleShortVersionString: "$(MARKETING_VERSION)"
+        CFBundleVersion: "$(CURRENT_PROJECT_VERSION)"
+        NSExtension:
+          NSExtensionPointIdentifier: com.apple.usernotifications.service
+          NSExtensionPrincipalClass: $(PRODUCT_MODULE_NAME).NotificationService
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.toomiiverse.haru.JF3928RYMD.notify
+        PRODUCT_NAME: HaruNotify
+        CODE_SIGN_STYLE: Automatic
         DEVELOPMENT_TEAM: "$(DEVELOPMENT_TEAM)"
         GENERATE_INFOPLIST_FILE: "NO"
         SKIP_INSTALL: "YES"

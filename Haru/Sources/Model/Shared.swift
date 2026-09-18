@@ -69,7 +69,7 @@ enum Shared {
     /// What a control wants of the app. Its intent opens the app and leaves
     /// the wish here, since an intent shared with the widget extension cannot
     /// reach the app's own Navigator; the app takes it as it comes to the front.
-    enum Ask: String { case call, standbyOn, standbyOff }
+    enum Ask: String { case call, standbyOn, standbyOff, hangUp }
 
     static let asked = Notification.Name("haru.asked")
 
@@ -89,6 +89,10 @@ enum Shared {
         guard Date().timeIntervalSince(at) < 30 else { return nil }
         return Ask(rawValue: raw)
     }
+
+    /// What is waiting, without taking it: a hang-up is acted on wherever the
+    /// app is, the rest only once it is in front.
+    static var waitingAsk: Ask? { defaults?.string(forKey: askKey).flatMap(Ask.init(rawValue:)) }
 
     /// Whether standby is on, for the control's switch to show.
     static var standby: Bool {

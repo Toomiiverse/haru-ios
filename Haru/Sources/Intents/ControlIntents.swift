@@ -21,6 +21,19 @@ struct CallHaruControlIntent: AppIntent {
     }
 }
 
+/// The red button on the Live Activity (LiveActivity.swift). A LiveActivityIntent
+/// runs in the app's process without bringing it to the front, which is all a
+/// hang-up needs.
+struct HangUpHaruIntent: LiveActivityIntent {
+    static let title: LocalizedStringResource = "Hang Up"
+    static let isDiscoverable = false
+
+    func perform() async throws -> some IntentResult {
+        Shared.ask(.hangUp)
+        return .result()
+    }
+}
+
 /// Standby on or off: "Hey Haru" with the phone locked.
 @available(iOS 18.0, *)
 struct StandbyControlIntent: SetValueIntent {

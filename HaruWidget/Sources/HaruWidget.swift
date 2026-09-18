@@ -11,6 +11,8 @@ import WidgetKit
 struct HaruWidgetBundle: WidgetBundle {
     var body: some Widget {
         HaruStatusWidget()
+        HaruListWidget()
+        HaruLiveActivity()
         if #available(iOSApplicationExtension 18.0, *) {
             HaruCallControl()
             HaruStandbyControl()

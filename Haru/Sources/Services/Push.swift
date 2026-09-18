@@ -116,6 +116,17 @@ final class PushDelegate: NSObject, UIApplicationDelegate, UNUserNotificationCen
         Push.received(deviceToken)
     }
 
+    /// Every push of hers is content-available too (apns.ts): while iOS has the
+    /// app awake for it, how she is now goes to the widgets, and her list and
+    /// the Reminders list are brought level — a line often means either moved.
+    func application(_ application: UIApplication, didReceiveRemoteNotification userInfo: [AnyHashable: Any]) async -> UIBackgroundFetchResult {
+        guard let standing: Standing = try? await Session.savedClient(quick: true).get("/api/status") else { return .failed }
+        Shared.store(standing: standing)
+        Shared.reloadWidgets(force: true)
+        await Reminders.shared.sync(force: true)
+        return .newData
+    }
+
     func application(_ application: UIApplication, didFailToRegisterForRemoteNotificationsWithError error: Error) {
         // No token: the polling in Refresh.swift carries on as before.
     }

@@ -28,7 +28,7 @@ struct HaruApp: App {
                 .onOpenURL { Navigator.shared.open($0) }
                 // A control's intent can land after the app is already in front.
                 .onReceive(NotificationCenter.default.publisher(for: Shared.asked)) { _ in
-                    if phase == .active { takeAsk() }
+                    if phase == .active || Shared.waitingAsk == .hangUp { takeAsk() }
                 }
                 .preferredColorScheme(.dark)
                 .tint(Color("AccentColor"))
@@ -46,6 +46,7 @@ struct HaruApp: App {
                 Push.register()
                 Task { await Push.sync(session) }
                 takeAsk()
+                chat.refreshLive()
                 Task { await chat.standbyOnActive() }
             default: break
             }
@@ -61,6 +62,7 @@ struct HaruApp: App {
             Navigator.shared.wantsCall = true
         case .standbyOn?: Task { await chat.setStandby(true) }
         case .standbyOff?: Task { await chat.setStandby(false) }
+        case .hangUp?: chat.endCall()
         case nil: break
         }
     }

@@ -134,7 +134,41 @@ final class ChatStore {
                 self.resumeStandby(notifyIfNot: true)
             }
         }
+        watchLive()
     }
+
+    // MARK: The lock screen (Live Activity)
+
+    /// What the Live Activity should say, or nil for none: a call over
+    /// standby, standby's three conditions otherwise.
+    private var livePhase: Live.Phase? {
+        switch callState {
+        case .connecting: return .connecting
+        case .listening: return .listening
+        case .thinking: return .thinking
+        case .speaking: return .speaking
+        case .off: break
+        }
+        guard standby else { return nil }
+        if standbyPaused { return .paused }
+        return standbyAsleep ? .asleep : .standby
+    }
+
+    /// Follows the properties `livePhase` reads, so no call site has to
+    /// remember the lock screen. onChange fires before the change lands, hence
+    /// the hop; tracking is one-shot, hence the re-arm.
+    private func watchLive() {
+        withObservationTracking { _ = livePhase } onChange: { [weak self] in
+            Task { @MainActor in
+                self?.refreshLive()
+                self?.watchLive()
+            }
+        }
+    }
+
+    /// Also called when the app comes to the front: the only time iOS lets an
+    /// activity start, and standby may have outlived the last one (8 hours).
+    func refreshLive() { Live.show(livePhase) }
 
     private var client: HaruClient { session.client }
     /// Milliseconds on a clock that does not jump.
