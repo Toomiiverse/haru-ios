@@ -67,6 +67,8 @@ targets:
               - haru
         NSMicrophoneUsageDescription: "So you can talk to her instead of typing."
         NSLocationWhenInUseUsageDescription: "So she knows roughly where you are, if you let her. Off unless you switch it on."
+        # "With the app closed too" under More (Locator.swift): significant changes and visits only.
+        NSLocationAlwaysAndWhenInUseUsageDescription: "So she can tell when you have got somewhere or left it, even with the app closed. Off unless you switch it on."
         NSPhotoLibraryUsageDescription: "To send her a picture."
         NSCameraUsageDescription: "To take a picture for her."
         NSHealthShareUsageDescription: "So she can notice how you slept and how far you walked, if you let her. Off unless you switch it on."
@@ -80,6 +82,7 @@ targets:
         UIBackgroundModes:
           - fetch
           - audio
+          - location
           - remote-notification
     dependencies:
       - target: HaruWidget

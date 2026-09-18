@@ -1,4 +1,5 @@
 import CoreLocation
+import UIKit
 import Network
 import Observation
 
@@ -18,6 +19,13 @@ final class Locator: NSObject, CLLocationManagerDelegate {
     private var net = "unknown"
     private var lastSent = Date.distantPast
     private var lastFix: CLLocation?
+    /// Whether she may hear where they are with the app closed. Kept on the
+    /// phone: it is this phone's permission, not a fact about them.
+    private(set) var background = UserDefaults.standard.bool(forKey: "where.background")
+    /// "Always" was asked for and iOS gave less; More says so.
+    var backgroundRefused: Bool {
+        background && manager.authorizationStatus != .authorizedAlways && manager.authorizationStatus != .notDetermined
+    }
 
     init(session: Session) {
         self.session = session
@@ -32,6 +40,9 @@ final class Locator: NSObject, CLLocationManagerDelegate {
             Task { @MainActor in self?.net = kind }
         }
         monitor.start(queue: DispatchQueue(label: "haru.net"))
+        // iOS may have launched the app for a location event with no screen to
+        // call load(): the delegate is set, so switch the services back on.
+        apply()
     }
 
     private var client: HaruClient { session.client }
@@ -58,22 +69,57 @@ final class Locator: NSObject, CLLocationManagerDelegate {
     func wake() {
         guard state?.enabled == true else { return }
         lastSent = .distantPast
+        apply()
         manager.requestLocation()
+    }
+
+    /// With the app closed too: iOS wakes the app when the phone has moved a
+    /// few hundred metres or settled somewhere, and the fix goes up like any
+    /// other. The server already turns fixes into arrivals (whereabouts.ts).
+    func setBackground(_ on: Bool) {
+        background = on
+        UserDefaults.standard.set(on, forKey: "where.background")
+        if on, manager.authorizationStatus != .authorizedAlways { manager.requestAlwaysAuthorization() }
+        apply()
+    }
+
+    /// The app has gone to the back: the fine-grained updates stop, and only
+    /// the two cheap services below go on. In front again, `wake` and `apply`
+    /// bring them back.
+    func rest() {
+        manager.stopUpdatingLocation()
     }
 
     private func apply() {
         authorised = manager.authorizationStatus == .authorizedWhenInUse || manager.authorizationStatus == .authorizedAlways
-        guard let state else { return }
-        if state.enabled {
+        // No state yet on a launch iOS made in the background: go by what was last asked for.
+        let enabled = state?.enabled ?? UserDefaults.standard.bool(forKey: "where.enabled")
+        if let state { UserDefaults.standard.set(state.enabled, forKey: "where.enabled") }
+        if enabled {
             if manager.authorizationStatus == .notDetermined { manager.requestWhenInUseAuthorization() }
-            manager.startUpdatingLocation()
+            if state != nil { manager.startUpdatingLocation() }
         } else {
             manager.stopUpdatingLocation()
+        }
+        // Significant changes and visits are the two services iOS will relaunch
+        // a closed app for; both are coarse and cost next to nothing.
+        if enabled, background, manager.authorizationStatus == .authorizedAlways {
+            manager.allowsBackgroundLocationUpdates = true
+            manager.pausesLocationUpdatesAutomatically = true
+            manager.startMonitoringSignificantLocationChanges()
+            manager.startMonitoringVisits()
+        } else {
+            manager.allowsBackgroundLocationUpdates = false
+            manager.stopMonitoringSignificantLocationChanges()
+            manager.stopMonitoringVisits()
         }
     }
 
     private func report(_ fix: CLLocation) async {
-        guard state?.enabled == true else { return }
+        guard state?.enabled ?? UserDefaults.standard.bool(forKey: "where.enabled") else { return }
+        // iOS gives a woken app seconds; hold it awake until the fix is up.
+        let held = UIApplication.shared.beginBackgroundTask(withName: "haru.where")
+        defer { if held != .invalid { UIApplication.shared.endBackgroundTask(held) } }
         // Every two minutes, or sooner when they have clearly moved.
         let moved = lastFix.map { fix.distance(from: $0) > 100 } ?? true
         guard moved || Date().timeIntervalSince(lastSent) > 120 else { return }
@@ -86,7 +132,9 @@ final class Locator: NSObject, CLLocationManagerDelegate {
             "net": .string(net),
         ]
         do {
-            state = try await client.post("/api/where", body)
+            // Woken in the background, the patient client would wait out the few seconds iOS allows.
+            let door = UIApplication.shared.applicationState == .background ? Session.savedClient(quick: true) : client
+            state = try await door.post("/api/where", body)
             reported = true
         } catch HaruError.server(let code, _) where code == 409 {
             // Sharing was switched off on the other side; stop asking.
@@ -120,6 +168,14 @@ final class Locator: NSObject, CLLocationManagerDelegate {
 
     nonisolated func locationManager(_ manager: CLLocationManager, didUpdateLocations locations: [CLLocation]) {
         guard let fix = locations.last else { return }
+        Task { @MainActor in await self.report(fix) }
+    }
+
+    /// Settled somewhere, or left it. A departure carries no new spot worth
+    /// sending; the next significant change says where they went.
+    nonisolated func locationManager(_ manager: CLLocationManager, didVisit visit: CLVisit) {
+        guard visit.departureDate == .distantFuture, visit.horizontalAccuracy >= 0 else { return }
+        let fix = CLLocation(coordinate: visit.coordinate, altitude: 0, horizontalAccuracy: visit.horizontalAccuracy, verticalAccuracy: -1, timestamp: Date())
         Task { @MainActor in await self.report(fix) }
     }
 

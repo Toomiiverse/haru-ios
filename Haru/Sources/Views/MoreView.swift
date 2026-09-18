@@ -311,6 +311,15 @@ struct MoreView: View {
             ))
             .disabled(locator.state == nil)
             if let state = locator.state, state.enabled {
+                Toggle("With the app closed too", isOn: Binding(
+                    get: { locator.background },
+                    set: { locator.setBackground($0) }
+                ))
+                if locator.backgroundRefused {
+                    Button("Set location to “Always” in Settings") {
+                        if let url = URL(string: UIApplication.openSettingsURLString) { UIApplication.shared.open(url) }
+                    }
+                }
                 LabeledContent("Right now", value: whereLine(state))
                 HStack {
                     TextField("Name this place (home, work…)", text: $placeName)
@@ -335,7 +344,7 @@ struct MoreView: View {
         } header: {
             Text("Where you are")
         } footer: {
-            Text("Off unless you switch it on. Only while the app is open. Naming a place \"home\" lets her say how far from it you are.")
+            Text("Off unless you switch it on. Only while the app is open, unless you let her hear with it closed: then the phone tells her when you have moved a few hundred metres or settled somewhere, which is how she knows you got home. Naming a place \"home\" lets her say how far from it you are.")
         }
     }
 }
