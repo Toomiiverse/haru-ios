@@ -9,6 +9,13 @@ options:
   xcodeVersion: "16.0"
   createIntermediateGroups: true
   generateEmptyDirectories: true
+# "Hey Haru" heard by the model trained on it (Services/WakeModel.swift):
+# livekit-wakeword bundles openWakeWord's front end and runs the classifier
+# through ONNX Runtime. Only its main branch has a root Package.swift.
+packages:
+  LiveKitWakeWord:
+    url: https://github.com/livekit/livekit-wakeword
+    branch: main
 settings:
   base:
     SWIFT_VERSION: "5.0"
@@ -75,6 +82,8 @@ targets:
     dependencies:
       - target: HaruWidget
       - target: HaruShare
+      - package: LiveKitWakeWord
+        product: LiveKitWakeWord
       # sherpa-onnx, fetched by scripts/build-ipa.sh — see WakeSpotter.swift.
       - framework: Vendor/SherpaOnnxC.xcframework
         embed: true

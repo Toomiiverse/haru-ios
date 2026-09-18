@@ -78,7 +78,9 @@ final class ChatStore {
     /// Her reply on the call, as it arrives a sentence at a time, and its bubble.
     private var callReply = ""
     private var callReplyID: String?
-    private var wake: WakeSpotter?
+    private var wake: NameSpotter?
+    /// Which ears are listening for her name, for the More screen.
+    private(set) var wakeEngine = ""
     private var gate: VoiceGate?
     /// Teaching her his voice: takes so far, nil when not.
     private(set) var enrolling: Int?
@@ -697,7 +699,12 @@ final class ChatStore {
             UserDefaults.standard.set(false, forKey: "standby.on")
             return
         }
-        if wake == nil { wake = WakeSpotter() }
+        // The model trained on her name when the build carries it; the general
+        // spotter otherwise (WakeModel.swift says why the model is preferred).
+        if wake == nil {
+            if let model = WakeModel() { wake = model; wakeEngine = "trained on “Hey Haru”" }
+            else if let spotter = WakeSpotter() { wake = spotter; wakeEngine = "keyword spotter" }
+        }
         guard let wake else {
             notice = "Her ears for “Hey Haru” are missing from this build."
             UserDefaults.standard.set(false, forKey: "standby.on")

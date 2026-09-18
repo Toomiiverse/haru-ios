@@ -116,7 +116,10 @@ struct MoreView: View {
                 get: { chat.standby },
                 set: { on in Task { await chat.setStandby(on) } }
             ))
-            if chat.standby { LabeledContent("Standby", value: chat.standbyLine) }
+            if chat.standby {
+                LabeledContent("Standby", value: chat.standbyLine)
+                LabeledContent("Her ears", value: chat.wakeEngine)
+            }
             Toggle("Cancel her echo while listening", isOn: $echoCancel)
             if let take = chat.enrolling {
                 LabeledContent("Say “Hey Haru”", value: "take \(take + 1) of \(VoiceGate.takes)")
