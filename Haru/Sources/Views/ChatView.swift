@@ -182,6 +182,11 @@ struct ChatView: View {
         if let now: Standing = try? await session.client.get("/api/status") {
             standing = now
             Shared.publish(standing: now)
+            // Asleep: her sleeping face, held. Awake again: the face she rests on.
+            let wasAsleep = chat.herAsleep
+            chat.herAsleep = now.asleep == true
+            if now.asleep == true { chat.stage.express("sleepy") }
+            else if wasAsleep { chat.emotion = now.emotion; chat.stage.express(now.face) }
         }
     }
 

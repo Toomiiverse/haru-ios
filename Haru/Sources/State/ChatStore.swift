@@ -45,6 +45,15 @@ final class ChatStore {
     var busy = false
     var loading = false
     var emotion = "neutral"
+    /// She is asleep, from /api/status (ChatView keeps it): the stage holds
+    /// her sleeping face, and no line's expression lifts it — a reply while
+    /// she sleeps is her asleep-answer, not her waking up.
+    var herAsleep = false {
+        didSet {
+            guard herAsleep != oldValue else { return }
+            if herAsleep { emotion = "sleepy"; stage.express("sleepy") }
+        }
+    }
     var staged: [StagedFile] = []
     var transcribing = false
     /// Something worth an alert. Cleared by the view.
@@ -371,8 +380,9 @@ final class ChatStore {
     /// when it lands. The mood word is what the stage's SVG faces are keyed
     /// by, the same way the phone page keys them.
     func express(_ line: String) async {
+        guard !herAsleep else { stage.express("sleepy"); return }
         let mood: Expression? = try? await client.post("/api/expression", ["text": .string(line)])
-        if let e = mood?.emotion, !e.isEmpty {
+        if let e = mood?.emotion, !e.isEmpty, !herAsleep {
             emotion = e
             stage.express(e)
         }
@@ -682,7 +692,9 @@ final class ChatStore {
             audio.endStream()
         case .turnEnded(let emotion):
             callFiller = nil
-            if let emotion, !emotion.isEmpty {
+            if herAsleep {
+                stage.express("sleepy")
+            } else if let emotion, !emotion.isEmpty {
                 // The face came with the turn; no model to ask.
                 self.emotion = emotion
                 stage.express(emotion)
@@ -1081,7 +1093,7 @@ final class ChatStore {
                 return
             }
             entries.append(Entry(id: UUID().uuidString, kind: .her, text: line))
-            if let e = word.emotion, !e.isEmpty {
+            if let e = word.emotion, !e.isEmpty, !herAsleep {
                 emotion = e
                 stage.express(e)
             }

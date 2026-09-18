@@ -107,6 +107,8 @@ struct WaitingItem: Codable, Identifiable {
 }
 
 struct Standing: Codable {
+    /// In her own sleeping hours (absent from a server older than 2026-09-19).
+    let asleep: Bool?
     let emotion: String
     let face: String
     let mood: String
