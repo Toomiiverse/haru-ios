@@ -137,6 +137,7 @@ final class Audio {
     private var streamCarry: UInt8?      // an odd trailing byte, half of the next sample
     private var streamPrimed = false     // playing; before that, buffers queue up
     private var streamQueued = 0.0       // seconds scheduled before playing began
+    private var streamPrimeAt = Audio.primeSeconds
 
     /// Her voice is about to arrive in pieces: mono 16-bit PCM at `sampleRate`.
     /// Each piece plays as it lands, one after another, so she starts talking
@@ -167,14 +168,24 @@ final class Audio {
             try? engine.start()
         }
         installMouthTap()
-        // Not playing yet: a quarter second queues first, so a late chunk does
-        // not leave the player starved and silent mid-word. A stream that is
-        // slow to reach that plays anyway after 400 ms.
+        // Not playing yet: most of a second queues first. Measured against
+        // Breeze on 2026-09-18, her audio reaches the phone about half a
+        // second behind real time for the first seven seconds of a line
+        // (1.33x real time over the whole line, in growing chunks), so a
+        // player that starts on a quarter second runs dry between every
+        // chunk — the stutter. A stream slow to reach that plays anyway after
+        // two and a half seconds.
         let token = streamToken
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.4) { [weak self] in self?.prime(token) }
+        streamPrimeAt = Self.primeSeconds
+        DispatchQueue.main.asyncAfter(deadline: .now() + 2.5) { [weak self] in self?.prime(token) }
         speaking = true
         ear.herTurn(true)
     }
+
+    /// Audio queued before the first chunk of a line plays.
+    static let primeSeconds = 0.9
+    /// After the player ran dry mid-line: enough to ride out the next gap.
+    static let reprimeSeconds = 0.6
 
     private func prime(_ token: Int) {
         guard token == streamToken, token == playToken, speaking, !streamPrimed else { return }
@@ -209,7 +220,7 @@ final class Audio {
         playEndsAt = max(playEndsAt, ProcessInfo.processInfo.systemUptime) + seconds
         if !streamPrimed {
             streamQueued += seconds
-            if streamQueued >= 0.25 { prime(token) }
+            if streamQueued >= streamPrimeAt { prime(token) }
         }
     }
 
@@ -224,7 +235,16 @@ final class Audio {
     private func streamed(_ token: Int) {
         guard token == streamToken, token == playToken else { return }
         streamPending = max(0, streamPending - 1)
-        if streamEnded, streamPending == 0 { finished(token) }
+        if streamEnded, streamPending == 0 { finished(token); return }
+        // Ran dry with more of the line still to come: rather than play each
+        // late chunk the moment it lands — a word, a hole, a word — hold until
+        // there is enough queued to keep going.
+        if streamPending == 0, streamPrimed {
+            player.pause()
+            streamPrimed = false
+            streamQueued = 0
+            streamPrimeAt = Self.reprimeSeconds
+        }
     }
 
     private func finished(_ token: Int) {
