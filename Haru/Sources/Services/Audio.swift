@@ -134,16 +134,29 @@ final class Audio {
     private var streamPending = 0        // buffers scheduled and not yet played back
     private var streamEnded = false      // the server has sent the last of this line
     private var streamToken = 0
+    private var streamCarry: UInt8?      // an odd trailing byte, half of the next sample
+    private var streamPrimed = false     // playing; before that, buffers queue up
+    private var streamQueued = 0.0       // seconds scheduled before playing began
 
     /// Her voice is about to arrive in pieces: mono 16-bit PCM at `sampleRate`.
     /// Each piece plays as it lands, one after another, so she starts talking
     /// at her first sentence rather than her last.
     func beginStream(sampleRate: Double) {
+        // The next sentence of the same call: it queues behind the one still
+        // sounding. Stopping here cut the tail of every line, since her voice
+        // is made faster than it plays (2026-09-18, "drops in and out").
+        if speaking, streamToken == playToken, let format = streamFormat, format.sampleRate == sampleRate {
+            streamEnded = false
+            return
+        }
         stopPlayback()
         playToken += 1
         streamToken = playToken
         streamPending = 0
         streamEnded = false
+        streamCarry = nil
+        streamPrimed = false
+        streamQueued = 0
         guard let format = AVAudioFormat(commonFormat: .pcmFormatFloat32, sampleRate: sampleRate, channels: 1, interleaved: false) else { return }
         streamFormat = format
         engine.disconnectNodeOutput(player)
@@ -154,34 +167,57 @@ final class Audio {
             try? engine.start()
         }
         installMouthTap()
-        player.play()
+        // Not playing yet: a quarter second queues first, so a late chunk does
+        // not leave the player starved and silent mid-word. A stream that is
+        // slow to reach that plays anyway after 400 ms.
+        let token = streamToken
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.4) { [weak self] in self?.prime(token) }
         speaking = true
         ear.herTurn(true)
     }
 
+    private func prime(_ token: Int) {
+        guard token == streamToken, token == playToken, speaking, !streamPrimed else { return }
+        streamPrimed = true
+        player.play()
+    }
+
     /// A stretch of her voice. Nothing happens without a beginStream first.
+    /// Chunks come in any byte length: an odd one would put every sample after
+    /// it half a sample out — static — so a trailing byte waits for the next.
     func feedStream(_ pcm: Data) {
         guard let format = streamFormat, speaking, streamToken == playToken else { return }
-        let count = pcm.count / 2
+        var bytes = pcm
+        if let carry = streamCarry { bytes.insert(carry, at: 0); streamCarry = nil }
+        if bytes.count % 2 == 1 { streamCarry = bytes.removeLast() }
+        let count = bytes.count / 2
         guard count > 0, let buffer = AVAudioPCMBuffer(pcmFormat: format, frameCapacity: AVAudioFrameCount(count)) else { return }
         buffer.frameLength = AVAudioFrameCount(count)
         let out = buffer.floatChannelData![0]
-        pcm.withUnsafeBytes { raw in
-            let samples = raw.bindMemory(to: Int16.self)
-            for i in 0..<count { out[i] = Float(Int16(littleEndian: samples[i])) / 32768 }
+        bytes.withUnsafeBytes { raw in
+            for i in 0..<count {
+                let lo = UInt16(raw[2 * i]), hi = UInt16(raw[2 * i + 1])
+                out[i] = Float(Int16(bitPattern: lo | hi << 8)) / 32768
+            }
         }
         streamPending += 1
         let token = streamToken
         player.scheduleBuffer(buffer, completionCallbackType: .dataPlayedBack) { [weak self] _ in
             Task { @MainActor in self?.streamed(token) }
         }
-        playEndsAt = ProcessInfo.processInfo.systemUptime + Double(count) / format.sampleRate
+        let seconds = Double(count) / format.sampleRate
+        playEndsAt = max(playEndsAt, ProcessInfo.processInfo.systemUptime) + seconds
+        if !streamPrimed {
+            streamQueued += seconds
+            if streamQueued >= 0.25 { prime(token) }
+        }
     }
 
     /// The last of this line has been sent; she is done once it has played.
     func endStream() {
         guard streamToken == playToken else { return }
         streamEnded = true
+        if !streamPrimed { prime(streamToken) }
         if streamPending == 0 { finished(streamToken) }
     }
 
