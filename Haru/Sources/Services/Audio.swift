@@ -336,7 +336,9 @@ final class Audio {
 
     /// She heard her name: one of her own breaths — a "hmph", a soft "hmmm",
     /// a soft laugh — before the call opens. Hers, in her voice, rather than a
-    /// tone. The clips are the ones her sighs come from (Resources/wake).
+    /// tone. The clips are the ones her sighs come from (Resources/wake),
+    /// brought up to just under full scale (2026-09-18: the raw breaths peaked
+    /// at -20 dBFS and were lost across a room; +18 to +21 dB, 5 ms fades).
     func chime() {
         let names = ["wake-hmph", "wake-hmmm", "wake-laugh"]
         if let name = names.randomElement(), let url = Bundle.main.url(forResource: name, withExtension: "wav"),
@@ -355,7 +357,7 @@ final class Audio {
             let count = Int(rate * seconds)
             for i in 0..<count {
                 let fade = min(1, Double(min(i, count - i)) / (rate * 0.01))
-                samples.append(Float(sin(2 * .pi * frequency * Double(i) / rate) * 0.25 * fade))
+                samples.append(Float(sin(2 * .pi * frequency * Double(i) / rate) * 0.8 * fade))
             }
         }
         play(Wav.encode(frames: [samples], from: rate, to: rate))
