@@ -15,7 +15,9 @@ options:
 packages:
   LiveKitWakeWord:
     url: https://github.com/livekit/livekit-wakeword
-    branch: main
+    # Pinned: `branch: main` re-resolved on every CI run, so the same source
+    # shipped a different onnxruntime between builds 60 and 62 (2026-09-18).
+    revision: 95448a7559c453fcd87645bd67b247ffb45f85b0
 settings:
   base:
     SWIFT_VERSION: "5.0"
@@ -101,6 +103,21 @@ targets:
         ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
         ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME: AccentColor
         SUPPORTS_MACCATALYST: "NO"
+        # The script below deletes inside the built app; the sandbox forbids that.
+        ENABLE_USER_SCRIPT_SANDBOXING: "NO"
+    postBuildScripts:
+      # LiveKitWakeWord depends on Microsoft's onnxruntime Swift package, whose
+      # iOS "framework" is a static archive in a framework folder (checked
+      # 2026-09-18: pod-archive-onnxruntime-c-1.24.2, ios-arm64 slice is an ar
+      # archive). It is linked into Haru itself, yet Xcode also copies it into
+      # Frameworks/, and App Store Connect rejects an app with a static library
+      # there during processing — by email only, with no build in TestFlight.
+      # Builds 60–62 vanished that way. Drop the copy; the code is already in.
+      - name: Drop the static onnxruntime copy
+        script: |
+          fw="${TARGET_BUILD_DIR}/${FRAMEWORKS_FOLDER_PATH}/onnxruntime.framework"
+          if [ -d "$fw" ]; then rm -rf "$fw"; echo "removed static $fw"; fi
+        basedOnDependencyAnalysis: false
   # Her on the home and lock screens. Shares the status types, the mood
   # look and the App Group bridge with the app; everything else is its own.
   HaruWidget:

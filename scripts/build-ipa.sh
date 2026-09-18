@@ -61,6 +61,19 @@ xcodegen generate
 # the distribution certificate and profile itself from that key — the whole
 # point, in a household with no Mac to make them on. Without the key, the
 # unsigned build below, as before.
+# No static library may sit in Frameworks/: Apple's processing rejects the
+# app (ITMS-90171 by email, nothing in TestFlight), as builds 60–62 found out.
+# `file` on a Mac reports such a framework binary as an "ar archive".
+no_static_frameworks() {
+  local bad=0 bin
+  for bin in "$1"/Frameworks/*.framework/*; do
+    [ -f "$bin" ] || continue
+    case "$(basename "$bin")" in Info.plist|*.plist|*.h) continue;; esac
+    if file "$bin" | grep -q "ar archive"; then echo "static library embedded: $bin" >&2; bad=1; fi
+  done
+  return $bad
+}
+
 if [ -n "${ASC_KEY_ID:-}" ] && [ -n "${ASC_ISSUER_ID:-}" ] && [ -n "${ASC_KEY_P8:-}" ] && [ -n "${APPLE_TEAM_ID:-}" ]; then
   mkdir -p ~/private_keys
   key=~/private_keys/AuthKey_${ASC_KEY_ID}.p8
@@ -77,6 +90,7 @@ if [ -n "${ASC_KEY_ID:-}" ] && [ -n "${ASC_ISSUER_ID:-}" ] && [ -n "${ASC_KEY_P8
     -archivePath build/Haru.xcarchive archive \
     "${auth[@]}" DEVELOPMENT_TEAM="$APPLE_TEAM_ID" CURRENT_PROJECT_VERSION="$build_number" \
     -quiet
+  no_static_frameworks build/Haru.xcarchive/Products/Applications/Haru.app || exit 1
   cat > build/ExportOptions.plist <<PLIST
 <?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
@@ -103,6 +117,7 @@ xcodebuild \
 app=build/Build/Products/Release-iphoneos/Haru.app
 # A failed build can still leave a bundle behind; the binary is the proof.
 test -f "$app/Haru" || { echo "No Haru binary in $app — the build did not finish." >&2; exit 1; }
+no_static_frameworks "$app" || exit 1
 
 rm -rf Payload Haru-unsigned.ipa
 mkdir -p Payload
