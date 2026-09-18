@@ -59,6 +59,8 @@ enum Refresh {
         content.sound = .default
         content.categoryIdentifier = (eventId == nil ? Push.Category.line : Push.Category.event).rawValue
         content.threadIdentifier = "haru-\(kind)"
+        // A thing on the list may break through a Focus, as the server's pushes do (apns.ts).
+        if eventId != nil { content.interruptionLevel = .timeSensitive }
         content.userInfo = Push.userInfo(kind: kind, eventId: eventId)
         let request = UNNotificationRequest(identifier: UUID().uuidString, content: content, trigger: nil)
         try? await UNUserNotificationCenter.current().add(request)
