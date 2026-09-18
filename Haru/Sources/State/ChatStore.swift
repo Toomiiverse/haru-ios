@@ -2,6 +2,7 @@ import Foundation
 import Observation
 import UIKit
 import UserNotifications
+import WidgetKit
 
 /// One bubble group on screen. Her replies split on blank lines into the
 /// bubbles she would have sent; an aside is one bubble with a mark down its side.
@@ -681,6 +682,11 @@ final class ChatStore {
     /// recording that began in the foreground carry on with the phone locked,
     /// but never lets one begin there.
     func setStandby(_ on: Bool) async {
+        // Whatever comes of it, the control's switch shows what is true (Controls.swift).
+        defer {
+            Shared.standby = standby
+            if #available(iOS 18.0, *) { ControlCenter.shared.reloadControls(ofKind: "com.toomiiverse.haru.control.standby") }
+        }
         UserDefaults.standard.set(on, forKey: "standby.on")
         if !on {
             standby = false

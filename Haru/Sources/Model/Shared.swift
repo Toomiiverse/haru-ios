@@ -14,6 +14,9 @@ enum Shared {
     private static let standingAtKey = "standingAt"
     private static let portraitKey = "portrait"
     private static let reloadedAtKey = "reloadedAt"
+    private static let askKey = "ask"
+    private static let askAtKey = "askAt"
+    private static let standbyKey = "standby"
 
     static var defaults: UserDefaults? { UserDefaults(suiteName: group) }
 
@@ -59,6 +62,38 @@ enum Shared {
     static var portrait: Data? {
         get { defaults?.data(forKey: portraitKey) }
         set { if let newValue { defaults?.set(newValue, forKey: portraitKey) } else { defaults?.removeObject(forKey: portraitKey) } }
+    }
+
+    // MARK: Controls (Control Center, the lock screen, the Action button)
+
+    /// What a control wants of the app. Its intent opens the app and leaves
+    /// the wish here, since an intent shared with the widget extension cannot
+    /// reach the app's own Navigator; the app takes it as it comes to the front.
+    enum Ask: String { case call, standbyOn, standbyOff }
+
+    static let asked = Notification.Name("haru.asked")
+
+    static func ask(_ ask: Ask) {
+        defaults?.set(ask.rawValue, forKey: askKey)
+        defaults?.set(Date(), forKey: askAtKey)
+        NotificationCenter.default.post(name: asked, object: nil)
+    }
+
+    /// The wish, once. One left lying for more than half a minute is dropped:
+    /// a call should never start because of a button pressed an hour ago.
+    static func takeAsk() -> Ask? {
+        guard let defaults, let raw = defaults.string(forKey: askKey) else { return nil }
+        let at = defaults.object(forKey: askAtKey) as? Date ?? .distantPast
+        defaults.removeObject(forKey: askKey)
+        defaults.removeObject(forKey: askAtKey)
+        guard Date().timeIntervalSince(at) < 30 else { return nil }
+        return Ask(rawValue: raw)
+    }
+
+    /// Whether standby is on, for the control's switch to show.
+    static var standby: Bool {
+        get { defaults?.bool(forKey: standbyKey) ?? false }
+        set { defaults?.set(newValue, forKey: standbyKey) }
     }
 
     /// WidgetKit rations reloads; at most one a few minutes is plenty for

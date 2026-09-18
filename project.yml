@@ -132,6 +132,8 @@ targets:
       - path: Haru/Sources/Model/JSONValue.swift
       - path: Haru/Sources/Model/MoodLook.swift
       - path: Haru/Sources/Model/Shared.swift
+      # The controls' intents run in the app but are declared to both (Controls.swift).
+      - path: Haru/Sources/Intents/ControlIntents.swift
     info:
       path: HaruWidget/Info.plist
       properties:
