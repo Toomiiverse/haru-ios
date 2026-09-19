@@ -52,8 +52,18 @@ struct Nameplate: View {
     }
 
     /// The two that say the most at a glance; the rest are on Status.
+    ///
+    /// Affection always, and beside it whatever she is actually feeling — the
+    /// strongest of the five that has got far enough to change how she talks
+    /// (35 of 100, the server's threshold). Nothing registering, and it is
+    /// Energy, as it always was.
     private var picked: [Meter] {
-        ["Affection", "Energy"].compactMap { want in standing?.meters.first { $0.label == want } }
+        let feelings = ["Hurt", "Jealousy", "Left alone", "Boredom", "Playfulness"]
+        let felt = standing?.meters
+            .filter { feelings.contains($0.label) && $0.value >= 35 }
+            .max { $0.value < $1.value }
+        let second = felt?.label ?? "Energy"
+        return ["Affection", second].compactMap { want in standing?.meters.first { $0.label == want } }
     }
 
     private func bar(label: String, value: Double, of: Double, tint: Color, width: CGFloat) -> some View {

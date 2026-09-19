@@ -38,6 +38,15 @@ enum MoodLook {
         case "Energy": return .yellow
         case "Stress": return .red
         case "Sleepiness": return .indigo
+        case "Curiosity": return .teal
+        case "Ego": return .orange
+        // What she feels about him, beside the vitals (the server's feelings.ts).
+        // Each its own colour, or five bars in one accent read as one thing.
+        case "Playfulness": return .mint
+        case "Jealousy": return .green
+        case "Left alone": return .blue
+        case "Boredom": return .gray
+        case "Hurt": return .purple
         default: return .accentColor
         }
     }
