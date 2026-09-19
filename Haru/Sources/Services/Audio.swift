@@ -360,6 +360,12 @@ final class Audio {
     /// brought up to just under full scale (2026-09-18: the raw breaths peaked
     /// at -20 dBFS and were lost across a room; +18 to +21 dB, 5 ms fades).
     func chime() {
+        // A sound of his own choosing wins (scripts/set-wake-sound.sh puts it
+        // there); her breaths otherwise.
+        if let url = Bundle.main.url(forResource: "wake-listen", withExtension: "wav"), let data = try? Data(contentsOf: url) {
+            play(data)
+            return
+        }
         let names = ["wake-hmph", "wake-hmmm", "wake-laugh"]
         if let name = names.randomElement(), let url = Bundle.main.url(forResource: name, withExtension: "wav"),
            let data = try? Data(contentsOf: url) {

@@ -754,7 +754,19 @@ final class ChatStore {
         // The model trained on her name when the build carries it; the general
         // spotter otherwise (WakeModel.swift says why the model is preferred).
         if wake == nil {
-            if let model = WakeModel() { wake = model; wakeEngine = "trained on “Hey Haru”" }
+            if let model = WakeModel() {
+                wake = model
+                wakeEngine = "trained on “Hey Haru”"
+                // The model cannot score (it has happened in the background): the
+                // general spotter takes over without the microphone closing.
+                model.onBroken = { [weak self] in
+                    guard let self, let spotter = WakeSpotter() else { return }
+                    spotter.onWake = { [weak self] in Task { await self?.woken() } }
+                    self.wake = spotter
+                    self.wakeEngine = "keyword spotter (the trained model failed)"
+                    if self.standby, !self.standbyAsleep { self.audio.spot(spotter) }
+                }
+            }
             else if let spotter = WakeSpotter() { wake = spotter; wakeEngine = "keyword spotter" }
         }
         guard let wake else {

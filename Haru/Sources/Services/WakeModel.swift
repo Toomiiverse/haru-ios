@@ -24,6 +24,11 @@ final class WakeModel: NameSpotter, @unchecked Sendable {
     private static let minimum = 24_000     // 1.5 s before the first
 
     var onWake: (() -> Void)?
+    /// Scoring keeps failing: these ears are no use, and ChatStore puts the
+    /// keyword spotter on instead. Called once, on the main queue.
+    var onBroken: (() -> Void)?
+    private var failures = 0
+    private var saidBroken = false
 
     private let model: WakeWordModel
     private let queue = DispatchQueue(label: "com.toomiiverse.haru.wakemodel", qos: .userInitiated)
@@ -36,7 +41,13 @@ final class WakeModel: NameSpotter, @unchecked Sendable {
     init?(bundle: Bundle = .main) {
         guard let url = bundle.url(forResource: Self.resource, withExtension: "onnx") else { return nil }
         do {
-            model = try WakeWordModel(models: [url], sampleRate: 16_000, executionProvider: .coreML)
+            // ORT's own CPU provider, not CoreML: iOS refuses GPU work from an app
+            // in the background, which is where standby lives, and a CoreML
+            // session is free to pick the GPU. Builds 63–67 used .coreML and her
+            // name went unheard with the phone locked (2026-09-19); the failures
+            // were swallowed below. Three small models every 200 ms is nothing
+            // for the CPU — the speaker check (VoiceGate) has always run there.
+            model = try WakeWordModel(models: [url], sampleRate: 16_000, executionProvider: .cpu)
         } catch {
             return nil
         }
@@ -61,7 +72,19 @@ final class WakeModel: NameSpotter, @unchecked Sendable {
             defer {
                 lock.lock(); scoring = false; lock.unlock()
             }
-            let score = (try? snapshot.withUnsafeBufferPointer { try model.predict($0) })?[Self.resource] ?? 0
+            let scores = try? snapshot.withUnsafeBufferPointer { try model.predict($0) }
+            guard let scores else {
+                // Five seconds of nothing but errors is not a hiccup.
+                lock.lock()
+                failures += 1
+                let broken = failures >= 25 && !saidBroken
+                if broken { saidBroken = true }
+                lock.unlock()
+                if broken { DispatchQueue.main.async { [weak self] in self?.onBroken?() } }
+                return
+            }
+            lock.lock(); failures = 0; lock.unlock()
+            let score = scores[Self.resource] ?? 0
             guard score >= Self.threshold else { return }
             let now = ProcessInfo.processInfo.systemUptime
             lock.lock()
