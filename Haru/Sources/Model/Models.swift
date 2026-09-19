@@ -14,8 +14,16 @@ struct ServerMessage: Decodable {
     let note: String?
     /// A string tag on the desktop; anything present and truthy is an aside.
     let aside: Bool
+    /// What rode the message: a picture shows in the bubble, anything else by name.
+    let attachments: [Attached]
 
-    private enum CodingKeys: String, CodingKey { case id, role, content, at, reaction, note, aside }
+    struct Attached: Decodable {
+        let name: String
+        let kind: String
+        let saved: String
+    }
+
+    private enum CodingKeys: String, CodingKey { case id, role, content, at, reaction, note, aside, attachments }
 
     init(from decoder: Decoder) throws {
         let c = try decoder.container(keyedBy: CodingKeys.self)
@@ -25,6 +33,7 @@ struct ServerMessage: Decodable {
         at = try c.decodeIfPresent(String.self, forKey: .at)
         reaction = try c.decodeIfPresent(String.self, forKey: .reaction)
         note = try c.decodeIfPresent(String.self, forKey: .note)
+        attachments = (try? c.decodeIfPresent([Attached].self, forKey: .attachments)) ?? []
         if let tag = try c.decodeIfPresent(JSONValue.self, forKey: .aside) {
             switch tag {
             case .null: aside = false

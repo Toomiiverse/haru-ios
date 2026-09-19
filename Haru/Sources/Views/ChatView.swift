@@ -158,7 +158,11 @@ struct ChatView: View {
                     EmptyView()
                 }
             }
-            .onTapGesture { withAnimation(.easeInOut(duration: 0.25)) { stageTall.toggle() } }
+            // Tapped mid-line, she stops talking; quiet, the tap sizes her stage as before.
+            .onTapGesture {
+                if chat.tapToHush() { return }
+                withAnimation(.easeInOut(duration: 0.25)) { stageTall.toggle() }
+            }
             .onLongPressGesture { chat.stage.reload() }
             .onAppear { frameStage() }
             .onChange(of: stageZoom) { _, _ in frameStage() }
@@ -361,6 +365,25 @@ struct ChatView: View {
         ScrollView(.horizontal, showsIndicators: false) {
             HStack(spacing: 6) {
                 ForEach(chat.staged) { file in
+                    if let preview = file.preview, let image = UIImage(data: preview) {
+                        Image(uiImage: image)
+                            .resizable()
+                            .scaledToFill()
+                            .frame(width: 64, height: 64)
+                            .clipShape(RoundedRectangle(cornerRadius: 12))
+                            .overlay(alignment: .topTrailing) {
+                                Button { Task { await chat.discard(file) } } label: {
+                                    Image(systemName: "xmark.circle.fill")
+                                        .font(.system(size: 20))
+                                        .symbolRenderingMode(.palette)
+                                        .foregroundStyle(.white, .black.opacity(0.65))
+                                }
+                                .offset(x: 6, y: -6)
+                                .accessibilityLabel("Remove picture")
+                            }
+                            .padding(.top, 6)
+                            .padding(.trailing, 6)
+                    } else {
                     HStack(spacing: 4) {
                         Image(systemName: "paperclip")
                         Text(file.name).lineLimit(1)
@@ -372,6 +395,7 @@ struct ChatView: View {
                     .padding(.horizontal, 10)
                     .padding(.vertical, 6)
                     .background(.thinMaterial, in: Capsule())
+                    }
                 }
             }
             .padding(.horizontal, 12)
@@ -435,6 +459,35 @@ struct ChatView: View {
 
 // MARK: - One entry
 
+/// A picture in one of his bubbles: what the phone sent, or her kept copy.
+struct SentPicture: View {
+    let picture: Picture
+    @Environment(ChatStore.self) private var chat
+    @State private var image: UIImage?
+
+    var body: some View {
+        Group {
+            if let image {
+                Image(uiImage: image)
+                    .resizable()
+                    .scaledToFit()
+                    .frame(maxWidth: 220, maxHeight: 280)
+                    .clipShape(RoundedRectangle(cornerRadius: 12))
+            } else {
+                RoundedRectangle(cornerRadius: 12)
+                    .fill(.white.opacity(0.15))
+                    .frame(width: 160, height: 120)
+                    .overlay { Image(systemName: "photo") }
+            }
+        }
+        .task(id: picture.id) {
+            if let data = picture.data { image = UIImage(data: data); return }
+            guard let saved = picture.saved, let data = await chat.picture(saved: saved) else { return }
+            image = UIImage(data: data)
+        }
+    }
+}
+
 struct EntryView: View {
     let entry: Entry
     let isLast: Bool
@@ -458,6 +511,9 @@ struct EntryView: View {
         HStack {
             Spacer(minLength: 48)
             VStack(alignment: .trailing, spacing: 4) {
+                ForEach(entry.pictures) { picture in
+                    SentPicture(picture: picture)
+                }
                 if !entry.text.isEmpty { Text(entry.text).textSelection(.enabled) }
                 if !entry.attachmentNames.isEmpty {
                     Label(entry.attachmentNames.joined(separator: ", "), systemImage: "paperclip").font(.footnote)

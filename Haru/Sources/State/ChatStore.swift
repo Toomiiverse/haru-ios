@@ -17,6 +17,8 @@ struct Entry: Identifiable, Hashable {
     /// Streaming: the bubble exists but she has not started yet.
     var waiting = false
     var attachmentNames: [String] = []
+    /// The pictures among them, shown in the bubble rather than named.
+    var pictures: [Picture] = []
 
     var parts: [String] {
         guard kind == .her, !aside else { return [text] }
@@ -27,11 +29,21 @@ struct Entry: Identifiable, Hashable {
     }
 }
 
+/// A picture in a bubble: the bytes the phone already had when it was sent, or
+/// the kept copy's name on her machine for one that came back with the day.
+struct Picture: Identifiable, Hashable {
+    let id = UUID()
+    var data: Data?
+    var saved: String?
+}
+
 /// A file already copied into her keeping, waiting to ride the next message.
 struct StagedFile: Identifiable, Hashable {
     let id = UUID()
     let name: String
     let record: JSONValue
+    /// The picture itself, for the preview above the composer; nil for a file.
+    var preview: Data?
 }
 
 /// Where a call through Hume stands. Off is the ordinary state; the rest
@@ -55,6 +67,8 @@ final class ChatStore {
         }
     }
     var staged: [StagedFile] = []
+    /// She was stopped mid-line by a tap; rides the next message as `interrupted`.
+    private var cutOff = false
     var transcribing = false
     /// Something worth an alert. Cleared by the view.
     var notice: String?
@@ -197,7 +211,9 @@ final class ChatStore {
                     kind: m.role == "user" ? .me : m.role == "assistant" ? .her : .system,
                     text: m.content,
                     aside: m.aside,
-                    reaction: m.reaction
+                    reaction: m.reaction,
+                    attachmentNames: m.attachments.filter { $0.kind != "image" }.map(\.name),
+                    pictures: m.attachments.filter { $0.kind == "image" }.map { Picture(saved: $0.saved) }
                 )
             }
         } catch HaruError.signedOut {
@@ -232,9 +248,14 @@ final class ChatStore {
         defer { busy = false }
         staged = []
         // Said over her, while she was still speaking: she is told so.
-        let interrupted = hush() || spokeOver
+        let interrupted = hush() || spokeOver || cutOff
+        cutOff = false
 
-        entries.append(Entry(id: UUID().uuidString, kind: .me, text: text, attachmentNames: files.map(\.name)))
+        entries.append(Entry(
+            id: UUID().uuidString, kind: .me, text: text,
+            attachmentNames: files.filter { $0.preview == nil }.map(\.name),
+            pictures: files.compactMap { file in file.preview.map { Picture(data: $0) } }
+        ))
         let waitID = UUID().uuidString
         entries.append(Entry(id: waitID, kind: .her, text: "", waiting: true))
 
@@ -525,7 +546,7 @@ final class ChatStore {
     func attach(name: String, data: Data, type: String) async {
         do {
             let answer: Staged = try await client.upload("/api/attach", data: data, type: type, query: ["name": name])
-            staged.append(StagedFile(name: name, record: answer.attachment))
+            staged.append(StagedFile(name: name, record: answer.attachment, preview: type.hasPrefix("image/") ? data : nil))
         } catch {
             notice = error.localizedDescription
         }
@@ -580,6 +601,24 @@ final class ChatStore {
         case "cap": return "that's the day's allowance"
         default: return "not available"
         }
+    }
+
+    /// Her model tapped while she is mid-line: she stops, and the next thing
+    /// said to her is said over her — which she is told, as when spoken over.
+    /// False when she was not talking, so the tap can mean what it used to.
+    /// A picture she was sent, back from her keeping, for a bubble that came
+    /// with the day rather than from this phone's camera roll.
+    func picture(saved: String) async -> Data? {
+        let name = (saved as NSString).lastPathComponent
+        guard let data = try? await client.bytes("/api/attach/file", query: ["saved": name]), !data.isEmpty else { return nil }
+        return data
+    }
+
+    func tapToHush() -> Bool {
+        guard audio.speaking || draining else { return false }
+        hush()
+        cutOff = true
+        return true
     }
 
     func askOnce() async {
