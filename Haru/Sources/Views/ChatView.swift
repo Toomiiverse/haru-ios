@@ -493,6 +493,7 @@ struct EntryView: View {
     let isLast: Bool
     @Environment(ChatStore.self) private var chat
     @State private var teaching = false
+    @State private var tuning = false
 
     var body: some View {
         switch entry.kind {
@@ -587,12 +588,17 @@ struct EntryView: View {
             if isLast {
                 Button { Task { await chat.retry() } } label: { Image(systemName: "arrow.clockwise") }
             }
+            // A thumb is for her; this is for him. It goes to the tuning log on
+            // the desk and nowhere near her prompt, so it is offered on every
+            // reply and leaves no mark on the bubble.
+            Button { tuning = true } label: { Image(systemName: "square.and.pencil") }
         }
         .font(.footnote)
         .foregroundStyle(.secondary)
         .buttonStyle(.plain)
         .padding(.leading, 8)
         .disabled(chat.busy)
+        .sheet(isPresented: $tuning) { TuneSheet(entry: entry) }
     }
 }
 

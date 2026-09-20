@@ -503,6 +503,24 @@ final class ChatStore {
         }
     }
 
+    /// What was wrong with a reply of hers, and what it should have been.
+    ///
+    /// Not a rating. Nothing of this reaches her — it lands in the tuning log
+    /// on the desk, for him to read at the end of a day — so the bubble does
+    /// not change and she never answers back. True when it was written down.
+    func tune(_ entry: Entry, wrong: String, rather: String) async -> Bool {
+        guard let id = entry.serverID else { return false }
+        do {
+            let _: Okay = try await client.post("/api/chat/tune", ["id": .string(id), "wrong": .string(wrong), "rather": .string(rather)])
+            return true
+        } catch HaruError.signedOut {
+            session.signedIn = false
+        } catch {
+            notice = error.localizedDescription
+        }
+        return false
+    }
+
     // MARK: Her ears
 
     /// What she heard against what was said. She keeps the word that differs
