@@ -84,6 +84,10 @@ struct ChatView: View {
         }
         // Typing: she shrinks up out of the way to make room for the talk;
         // done, she is back at full size.
+        // Picking a line to answer is the start of typing the answer.
+        .onChange(of: chat.replyingTo?.id) { _, id in
+            if id != nil { typing = true }
+        }
         .onChange(of: typing) { _, now in
             withAnimation(.easeInOut(duration: 0.3)) { compact = now }
         }
@@ -265,6 +269,7 @@ struct ChatView: View {
 
     private var composer: some View {
         VStack(spacing: 6) {
+            if let target = chat.replyingTo { replyBar(target) }
             if !chat.staged.isEmpty { chips }
             if chat.talkState != .off || chat.callState != .off || chat.standby { talkPill }
             HStack(alignment: .bottom, spacing: 8) {
@@ -359,6 +364,32 @@ struct ChatView: View {
             return "Standby — say “Hey Haru”, even locked"
         }
         return ""
+    }
+
+    /// The line she is being answered on, above the box, with a way out of it.
+    private func replyBar(_ target: Entry) -> some View {
+        HStack(spacing: 8) {
+            RoundedRectangle(cornerRadius: 2)
+                .fill(Color.accentColor)
+                .frame(width: 3)
+            VStack(alignment: .leading, spacing: 2) {
+                Text("Replying to Haru")
+                    .font(.caption.weight(.semibold))
+                    .foregroundStyle(Color.accentColor)
+                Text(ChatStore.excerpt(of: target.text))
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    .lineLimit(1)
+            }
+            Spacer(minLength: 0)
+            Button { chat.replyingTo = nil } label: {
+                Image(systemName: "xmark.circle.fill").foregroundStyle(.secondary)
+            }
+            .accessibilityLabel("Stop replying to that line")
+        }
+        .padding(.horizontal, 10)
+        .padding(.vertical, 6)
+        .background(Color(uiColor: .secondarySystemBackground), in: RoundedRectangle(cornerRadius: 12))
     }
 
     private var chips: some View {
@@ -494,6 +525,8 @@ struct EntryView: View {
     @Environment(ChatStore.self) private var chat
     @State private var teaching = false
     @State private var tuning = false
+    /// How far her bubble has been pulled towards a reply.
+    @State private var drag: CGFloat = 0
 
     var body: some View {
         switch entry.kind {
@@ -514,6 +547,19 @@ struct EntryView: View {
             VStack(alignment: .trailing, spacing: 4) {
                 ForEach(entry.pictures) { picture in
                     SentPicture(picture: picture)
+                }
+                if let quote = entry.quote {
+                    // The line of hers this answers, so the bubble reads the way it was meant.
+                    HStack(alignment: .top, spacing: 6) {
+                        RoundedRectangle(cornerRadius: 1.5)
+                            .fill(Color.white.opacity(0.7))
+                            .frame(width: 3)
+                        Text(quote)
+                            .font(.caption)
+                            .lineLimit(2)
+                            .opacity(0.9)
+                    }
+                    .fixedSize(horizontal: false, vertical: true)
                 }
                 if !entry.text.isEmpty { Text(entry.text).textSelection(.enabled) }
                 if !entry.attachmentNames.isEmpty {
@@ -549,11 +595,46 @@ struct EntryView: View {
             } else {
                 ForEach(Array(entry.parts.enumerated()), id: \.offset) { _, part in
                     bubble { Text(Lively.text(part, tint: tint)).textSelection(.enabled) }
+                        .contextMenu {
+                            if repliable {
+                                Button { chat.replyingTo = entry } label: {
+                                    Label("Reply", systemImage: "arrowshape.turn.up.left")
+                                }
+                            }
+                            Button { UIPasteboard.general.string = part } label: {
+                                Label("Copy", systemImage: "doc.on.doc")
+                            }
+                        }
                 }
             }
             if entry.serverID != nil && !entry.aside && !entry.waiting { actions }
         }
         .frame(maxWidth: .infinity, alignment: .leading)
+        .offset(x: drag)
+        .contentShape(Rectangle())
+        .simultaneousGesture(swipeToReply)
+    }
+
+    /// Any line of hers that has finished arriving — a reply, or one she pushed.
+    private var repliable: Bool { entry.kind == .her && !entry.waiting && !entry.text.isEmpty }
+
+    /// A swipe to the right on her bubble answers that line. Simultaneous, and only
+    /// when mostly sideways, so scrolling the day still scrolls.
+    private var swipeToReply: some Gesture {
+        DragGesture(minimumDistance: 24)
+            .onChanged { value in
+                guard repliable, value.translation.width > 0,
+                      abs(value.translation.width) > abs(value.translation.height) * 1.5 else { return }
+                drag = min(value.translation.width, 64)
+            }
+            .onEnded { value in
+                let sideways = abs(value.translation.width) > abs(value.translation.height) * 1.5
+                if repliable, sideways, value.translation.width > 56 {
+                    UIImpactFeedbackGenerator(style: .light).impactOccurred()
+                    chat.replyingTo = entry
+                }
+                withAnimation(.spring(duration: 0.25)) { drag = 0 }
+            }
     }
 
     private func bubble<Content: View>(@ViewBuilder _ content: () -> Content) -> some View {

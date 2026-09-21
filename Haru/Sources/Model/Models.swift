@@ -16,6 +16,13 @@ struct ServerMessage: Decodable {
     let aside: Bool
     /// What rode the message: a picture shows in the bubble, anything else by name.
     let attachments: [Attached]
+    /// The line of hers a message of his answers, as the server quoted it back.
+    let replyTo: ReplyTo?
+
+    struct ReplyTo: Decodable {
+        let id: String
+        let excerpt: String
+    }
 
     struct Attached: Decodable {
         let name: String
@@ -23,7 +30,7 @@ struct ServerMessage: Decodable {
         let saved: String
     }
 
-    private enum CodingKeys: String, CodingKey { case id, role, content, at, reaction, note, aside, attachments }
+    private enum CodingKeys: String, CodingKey { case id, role, content, at, reaction, note, aside, attachments, replyTo }
 
     init(from decoder: Decoder) throws {
         let c = try decoder.container(keyedBy: CodingKeys.self)
@@ -34,6 +41,9 @@ struct ServerMessage: Decodable {
         reaction = try c.decodeIfPresent(String.self, forKey: .reaction)
         note = try c.decodeIfPresent(String.self, forKey: .note)
         attachments = (try? c.decodeIfPresent([Attached].self, forKey: .attachments)) ?? []
+        // Lenient on purpose: a reference the phone cannot read loses the quote,
+        // never the whole day.
+        replyTo = try? c.decodeIfPresent(ReplyTo.self, forKey: .replyTo)
         if let tag = try c.decodeIfPresent(JSONValue.self, forKey: .aside) {
             switch tag {
             case .null: aside = false

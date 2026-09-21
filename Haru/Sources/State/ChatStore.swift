@@ -19,6 +19,8 @@ struct Entry: Identifiable, Hashable {
     var attachmentNames: [String] = []
     /// The pictures among them, shown in the bubble rather than named.
     var pictures: [Picture] = []
+    /// His message answers this line of hers: shown above his words.
+    var quote: String? = nil
 
     var parts: [String] {
         guard kind == .her, !aside else { return [text] }
@@ -67,6 +69,8 @@ final class ChatStore {
         }
     }
     var staged: [StagedFile] = []
+    /// The line of hers he is about to answer, set by a swipe on her bubble.
+    var replyingTo: Entry?
     /// She was stopped mid-line by a tap; rides the next message as `interrupted`.
     private var cutOff = false
     var transcribing = false
@@ -213,7 +217,8 @@ final class ChatStore {
                     aside: m.aside,
                     reaction: m.reaction,
                     attachmentNames: m.attachments.filter { $0.kind != "image" }.map(\.name),
-                    pictures: m.attachments.filter { $0.kind == "image" }.map { Picture(saved: $0.saved) }
+                    pictures: m.attachments.filter { $0.kind == "image" }.map { Picture(saved: $0.saved) },
+                    quote: m.replyTo?.excerpt
                 )
             }
         } catch HaruError.signedOut {
@@ -247,6 +252,10 @@ final class ChatStore {
         busy = true
         defer { busy = false }
         staged = []
+        // Taken here, after the wait: a send that gives up above keeps its target,
+        // so text that goes back into the box goes back with the line it answered.
+        let answering = replyingTo
+        replyingTo = nil
         // Said over her, while she was still speaking: she is told so.
         let interrupted = hush() || spokeOver || cutOff
         cutOff = false
@@ -254,7 +263,8 @@ final class ChatStore {
         entries.append(Entry(
             id: UUID().uuidString, kind: .me, text: text,
             attachmentNames: files.filter { $0.preview == nil }.map(\.name),
-            pictures: files.compactMap { file in file.preview.map { Picture(data: $0) } }
+            pictures: files.compactMap { file in file.preview.map { Picture(data: $0) } },
+            quote: answering.map { Self.excerpt(of: $0.text) }
         ))
         let waitID = UUID().uuidString
         entries.append(Entry(id: waitID, kind: .her, text: "", waiting: true))
@@ -262,9 +272,25 @@ final class ChatStore {
         var body: [String: JSONValue] = ["text": .string(text)]
         if !files.isEmpty { body["attachments"] = .array(files.map(\.record)) }
         if interrupted { body["interrupted"] = true }
+        if let answering {
+            // The id when the phone has one; the start of the line when it is a
+            // reply just streamed. The server checks either against what she said.
+            if let id = answering.serverID { body["replyTo"] = .string(id) }
+            body["quoted"] = .string(Self.excerpt(of: answering.text))
+        }
         stage.attend("thinking", ms: 20_000)
         await run(client.stream("/api/chat/stream", body), into: waitID)
         return true
+    }
+
+    /// Enough of her line to know it by: the first 140 characters, cut at a word.
+    /// Whitespace flattened the way the server flattens it, so its match holds.
+    nonisolated static func excerpt(of text: String) -> String {
+        let flat = text.split(whereSeparator: { $0.isWhitespace }).joined(separator: " ")
+        guard flat.count > 140 else { return flat }
+        let cut = flat.prefix(140)
+        if let space = cut.lastIndex(of: " ") { return String(cut[..<space]) + "…" }
+        return String(cut) + "…"
     }
 
     /// Her last reply, done again. The bubble is swapped, not added.
