@@ -27,6 +27,9 @@ What it does:
 - **Status** — where you stand: mood, bond, meters, patience, grudge, what she
   is waiting on (tick things off from here).
 - **Diary**, **Her** — her diary and her own things, nights out, likes, wants.
+- **Her → Little World** — visit her live town, garden and projects; pause,
+  change speed or suggest an activity. It shares the server's saved world and
+  the app's sign-in. Reload reconnects without resetting her progress.
 - **More** — her pestering rules (shared with the desktop), location sharing
   with named places, what she remembers, sign out.
 - She speaks first while the app is open (`/api/nudge` on open, on return, and
@@ -80,6 +83,14 @@ token has the `workflow` scope). Each push to `main` then lands in TestFlight
 a few minutes later, build number = the run number. Real push notifications
 need a second key: `scripts/install-apns.sh` puts the APNs `.p8` on the
 server and sets `apns` in its config.
+
+After upload, the build checks Apple's processing and internal testing status
+for up to ten minutes. A timeout means the upload succeeded but availability
+is still unconfirmed; check App Store Connect before uploading again.
+
+For Little World testing, connect Tailscale, open **Her → Little World**, try
+pause/resume and an activity suggestion, then leave and reopen the view to
+check that progress persists. Reload should reconnect after a lost connection.
 
 ## First run
 

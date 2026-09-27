@@ -9,6 +9,21 @@ struct HerView: View {
     var body: some View {
         NavigationStack {
             List {
+                Section {
+                    NavigationLink {
+                        WorldView()
+                    } label: {
+                        Label {
+                            VStack(alignment: .leading, spacing: 4) {
+                                Text("Little World")
+                                Text("Visit her town, garden and little adventures.")
+                                    .font(.footnote).foregroundStyle(.secondary)
+                            }
+                        } icon: {
+                            Image(systemName: "leaf.fill")
+                        }
+                    }
+                }
                 if let her {
                     Section {
                         LabeledContent("Nights out", value: nights(her.nightsOut))

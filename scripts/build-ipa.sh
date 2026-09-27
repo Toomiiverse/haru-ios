@@ -14,6 +14,7 @@ if compgen -G "/Applications/Xcode_*.app" >/dev/null; then
   sudo xcode-select -s "$newest"
 fi
 xcodebuild -version
+node --test scripts/verify-testflight.test.mjs
 
 command -v xcodegen >/dev/null || brew install xcodegen
 
@@ -105,6 +106,7 @@ if [ -n "${ASC_KEY_ID:-}" ] && [ -n "${ASC_ISSUER_ID:-}" ] && [ -n "${ASC_KEY_P8
 PLIST
   xcodebuild -exportArchive -archivePath build/Haru.xcarchive -exportOptionsPlist build/ExportOptions.plist -exportPath build/export "${auth[@]}"
   echo "Uploaded build $build_number to App Store Connect — it appears in TestFlight once Apple has processed it."
+  node scripts/verify-testflight.mjs "$build_number"
   exit 0
 fi
 xcodebuild \
