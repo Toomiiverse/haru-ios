@@ -37,8 +37,8 @@ struct WorldView: View {
         }
         .task(id: reloadID) {
             await browser.load(base: session.client.base,
-                               signedOut: { session.signedIn = false },
-                               close: { dismiss() })
+                               signedOut: { [session] in session.signedIn = false },
+                               close: { [dismiss] in dismiss() })
         }
         .onDisappear { browser.stop() }
     }
@@ -118,6 +118,8 @@ private final class WorldBrowser: NSObject, WKNavigationDelegate {
         generation += 1
         web.stopLoading()
         loading = false
+        signedOut = nil
+        close = nil
     }
 
     private func fail(_ message: String) {
