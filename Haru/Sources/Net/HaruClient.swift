@@ -1,5 +1,19 @@
 import Foundation
 
+enum SpeechPart: Sendable {
+    case format(Double)
+    case pcm(Data)
+    case file(Data)
+}
+
+/// Starts fetching while earlier lines are playing. Cancellation belongs to
+/// the queued line too, so interrupting her also stops prefetched requests.
+struct SpeechDownload: Sendable {
+    let parts: AsyncThrowingStream<SpeechPart, Error>
+    let task: Task<Void, Never>
+    func cancel() { task.cancel() }
+}
+
 enum HaruError: LocalizedError {
     /// A 401: the cookie is gone or was never set. The app goes back to sign-in.
     case signedOut
@@ -107,6 +121,49 @@ struct HaruClient: Sendable {
         let (data, response) = try await session.data(for: req)
         try Self.check(response, data)
         return data
+    }
+
+    /// Breeze's first PCM reaches the player immediately. Servers or voices
+    /// without PCM support still return a regular audio file on this route.
+    func speech(_ text: String, emotion: String?) -> SpeechDownload {
+        let (parts, continuation) = AsyncThrowingStream<SpeechPart, Error>.makeStream()
+        let task = Task {
+            do {
+                var query = ["text": text, "format": "pcm"]
+                if let emotion { query["emotion"] = emotion }
+                var req = request("/api/speak", method: "GET", query: query)
+                req.setValue("*/*", forHTTPHeaderField: "Accept")
+                let (bytes, response) = try await session.bytes(for: req)
+                guard let http = response as? HTTPURLResponse else { throw HaruError.server(502, "No voice response.") }
+                if !(200..<300).contains(http.statusCode) {
+                    var data = Data()
+                    for try await byte in bytes { data.append(byte) }
+                    try Self.check(response, data)
+                }
+                let pcm = http.mimeType == "audio/pcm"
+                if pcm {
+                    guard let value = http.value(forHTTPHeaderField: "X-Haru-Sample-Rate"),
+                          let rate = Double(value), (8_000...192_000).contains(rate) else {
+                        throw HaruError.server(502, "Unknown voice sample rate.")
+                    }
+                    continuation.yield(.format(rate))
+                }
+                var data = Data()
+                for try await byte in bytes {
+                    data.append(byte)
+                    if pcm, data.count >= 4096 {
+                        try Task.checkCancellation()
+                        continuation.yield(.pcm(data))
+                        data = Data()
+                    }
+                }
+                try Task.checkCancellation()
+                if !data.isEmpty { continuation.yield(pcm ? .pcm(data) : .file(data)) }
+                continuation.finish()
+            } catch { continuation.finish(throwing: error) }
+        }
+        continuation.onTermination = { _ in task.cancel() }
+        return SpeechDownload(parts: parts, task: task)
     }
 
     /// The server-sent stream behind /api/chat/stream and /api/chat/retry: one

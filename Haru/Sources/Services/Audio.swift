@@ -168,13 +168,9 @@ final class Audio {
             try? engine.start()
         }
         installMouthTap()
-        // Not playing yet: most of a second queues first. Measured against
-        // Breeze on 2026-09-18, her audio reaches the phone about half a
-        // second behind real time for the first seven seconds of a line
-        // (1.33x real time over the whole line, in growing chunks), so a
-        // player that starts on a quarter second runs dry between every
-        // chunk — the stutter. A stream slow to reach that plays anyway after
-        // two and a half seconds.
+        // Prime once the first useful chunk arrives. Breeze's current runtime
+        // produces audio faster than playback; measured again on 2026-09-29.
+        // A slow connection still gets the larger recovery buffer below.
         let token = streamToken
         streamPrimeAt = Self.primeSeconds
         DispatchQueue.main.asyncAfter(deadline: .now() + 2.5) { [weak self] in self?.prime(token) }
@@ -183,7 +179,7 @@ final class Audio {
     }
 
     /// Audio queued before the first chunk of a line plays.
-    static let primeSeconds = 0.9
+    static let primeSeconds = 0.24
     /// After the player ran dry mid-line: enough to ride out the next gap.
     static let reprimeSeconds = 0.6
 
@@ -258,7 +254,9 @@ final class Audio {
 
     private func stopPlayback() {
         playToken += 1
-        if player.isPlaying { player.stop() }
+        // Buffers can be scheduled while priming or paused after an underrun.
+        // Stop those too, or an interrupted line leaks into the next one.
+        player.stop()
         speaking = false
         ear.herTurn(false)
         removeMouthTap()

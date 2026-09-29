@@ -100,7 +100,21 @@ final class ChatStore {
     private var lastAskedAt = Date.distantPast
     /// Her lines being fetched, in the order she will say them, each with the
     /// breath (in milliseconds) she takes before it — none before the first.
-    private var lines: [(gap: Int, fetch: Task<Data?, Never>)] = []
+    private enum VoiceFetch {
+        case stream(SpeechDownload)
+        case clip(Task<Data?, Never>)
+
+        func cancel() {
+            switch self {
+            case .stream(let download): download.cancel()
+            case .clip(let task): task.cancel()
+            }
+        }
+    }
+    private var lines: [(gap: Int, fetch: VoiceFetch)] = []
+    private var activeLine: VoiceFetch?
+    private var drainTask: Task<Void, Never>?
+    private var voiceGeneration = 0
     private var draining = false
     private var spokeSomething = false
     /// Her reply on the call, as it arrives a sentence at a time, and its bubble.
@@ -453,11 +467,8 @@ final class ChatStore {
     /// breath — a sentence's worth by default. Two lines run together sound
     /// like one person reading; a pause between them sounds like one talking.
     func say(_ text: String, emotion: String?, gap: Int = 280) {
-        var body: [String: JSONValue] = ["text": .string(text)]
-        if let emotion { body["emotion"] = .string(emotion) }
-        let client = self.client
         // 503 when her voice is switched off for the web: the right amount of fuss is none.
-        lines.append((gap: gap, fetch: Task { try? await client.bytes("/api/speak", post: body) }))
+        lines.append((gap: gap, fetch: .stream(client.speech(text, emotion: emotion))))
         if !draining && !audio.speaking { drain() }
     }
 
@@ -467,7 +478,7 @@ final class ChatStore {
     func sigh() {
         let client = self.client
         let mood = emotion
-        lines.append((gap: 350, fetch: Task { try? await client.bytes("/api/sigh", query: ["emotion": mood]) }))
+        lines.append((gap: 350, fetch: .clip(Task { try? await client.bytes("/api/sigh", query: ["emotion": mood]) })))
         if !draining && !audio.speaking { drain() }
     }
 
@@ -482,32 +493,75 @@ final class ChatStore {
         }
         draining = true
         let next = lines.removeFirst()
-        Task {
-            let data = await next.fetch.value
-            guard draining else { return }
-            // The breath before this line, once something has been said.
-            if spokeSomething, next.gap > 0 {
-                try? await Task.sleep(for: .milliseconds(next.gap))
-                guard draining else { return }
-            }
-            if let data, audio.play(data) {
-                spokeSomething = true
-                // Looking at them for as long as the line runs.
-                stage.attend("talking", ms: Int(audio.remaining * 1000) + 500)
-            } else {
-                drain()
+        activeLine = next.fetch
+        let generation = voiceGeneration
+        drainTask = Task {
+            var streaming = false
+            var playingFile = false
+            do {
+                // No pause before the first line. Later lines can download
+                // during this breath and during the preceding sentence.
+                if spokeSomething, next.gap > 0 { try await Task.sleep(for: .milliseconds(next.gap)) }
+                try Task.checkCancellation()
+                guard generation == voiceGeneration else { return }
+                switch next.fetch {
+                case .clip(let fetch):
+                    let data = await fetch.value
+                    try Task.checkCancellation()
+                    guard generation == voiceGeneration else { return }
+                    if let data { playingFile = audio.play(data) }
+                case .stream(let download):
+                    for try await part in download.parts {
+                        try Task.checkCancellation()
+                        guard generation == voiceGeneration else { return }
+                        switch part {
+                        case .format(let rate):
+                            audio.beginStream(sampleRate: rate)
+                            streaming = true
+                        case .pcm(let data):
+                            audio.feedStream(data)
+                            spokeSomething = true
+                            stage.attend("talking", ms: Int(audio.remaining * 1000) + 500)
+                        case .file(let data): playingFile = audio.play(data)
+                        }
+                    }
+                }
+                guard generation == voiceGeneration else { return }
+                activeLine = nil
+                if playingFile {
+                    spokeSomething = true
+                    stage.attend("talking", ms: Int(audio.remaining * 1000) + 500)
+                }
+                if streaming { audio.endStream() }
+                else if !playingFile { drain() }
+            } catch {
+                guard generation == voiceGeneration else { return }
+                activeLine = nil
+                // Finish any audio already queued; onFinished advances the
+                // queue. An interrupted old request can never restart it.
+                if streaming { audio.endStream() }
+                else { drain() }
             }
         }
+    }
+
+    private func cancelLines() {
+        voiceGeneration += 1
+        drainTask?.cancel()
+        drainTask = nil
+        activeLine?.cancel()
+        activeLine = nil
+        for line in lines { line.fetch.cancel() }
+        lines = []
+        draining = false
+        spokeSomething = false
     }
 
     /// Stops her mid-line and forgets what she was about to say. Returns
     /// whether she was actually talking.
     @discardableResult
     private func hush() -> Bool {
-        for line in lines { line.fetch.cancel() }
-        lines = []
-        draining = false
-        spokeSomething = false
+        cancelLines()
         return audio.stop()
     }
 
@@ -551,7 +605,8 @@ final class ChatStore {
 
     /// What she heard against what was said. She keeps the word that differs
     /// and rewrites it on every take from now on, calls included.
-    func teach(heard: String, meant: String) async {
+    @discardableResult
+    func teach(heard: String, meant: String) async -> Bool {
         do {
             let taught: HearingTaught = try await client.post("/api/hearing", ["heard": .string(heard), "meant": .string(meant)])
             if let pair = taught.learned {
@@ -559,11 +614,13 @@ final class ChatStore {
             } else {
                 notice = "Nothing to learn from that — the sentences are the same, or too different to pin on a word."
             }
+            return true
         } catch HaruError.signedOut {
             session.signedIn = false
         } catch {
             notice = error.localizedDescription
         }
+        return false
     }
 
     // MARK: Her speaking first
@@ -763,9 +820,7 @@ final class ChatStore {
             play(wav)
         case .voiceStart(_, let sampleRate):
             // Streamed: whatever whole lines were queued are hers no longer.
-            for line in lines { line.fetch.cancel() }
-            lines = []
-            draining = false
+            cancelLines()
             audio.beginStream(sampleRate: sampleRate)
             call?.her(speaking: true)
             stage.attend("talking", ms: 4_000)
