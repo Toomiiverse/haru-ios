@@ -856,7 +856,7 @@ final class ChatStore {
 
     /// Her voice off the call, a sentence at a time, played in order.
     private func play(_ wav: Data) {
-        lines.append((gap: 0, fetch: Task<Data?, Never> { wav }))
+        lines.append((gap: 0, fetch: .clip(Task<Data?, Never> { wav })))
         if !draining && !audio.speaking { drain() }
     }
 
