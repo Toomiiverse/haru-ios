@@ -37,6 +37,8 @@ struct Picture: Identifiable, Hashable {
     let id = UUID()
     var data: Data?
     var saved: String?
+    /// Blurred until he taps it: a picture she drew, not one he sent.
+    var isPrivate = false
 }
 
 /// A file already copied into her keeping, waiting to ride the next message.
@@ -217,7 +219,7 @@ final class ChatStore {
                     aside: m.aside,
                     reaction: m.reaction,
                     attachmentNames: m.attachments.filter { $0.kind != "image" }.map(\.name),
-                    pictures: m.attachments.filter { $0.kind == "image" }.map { Picture(saved: $0.saved) },
+                    pictures: m.attachments.filter { $0.kind == "image" }.map { Picture(saved: $0.saved, isPrivate: $0.isPrivate) },
                     quote: m.replyTo?.excerpt
                 )
             }
