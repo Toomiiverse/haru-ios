@@ -517,6 +517,7 @@ struct SentPicture: View {
     let picture: Picture
     @Environment(ChatStore.self) private var chat
     @State private var image: UIImage?
+    @State private var shown = false
 
     var body: some View {
         Group {
@@ -526,6 +527,15 @@ struct SentPicture: View {
                     .scaledToFit()
                     .frame(maxWidth: 220, maxHeight: 280)
                     .clipShape(RoundedRectangle(cornerRadius: 12))
+                    .blur(radius: picture.isPrivate && !shown ? 22 : 0)
+                    .overlay {
+                        if picture.isPrivate && !shown {
+                            Text("tap to look")
+                                .font(.caption2)
+                                .foregroundStyle(.white)
+                        }
+                    }
+                    .onTapGesture { if picture.isPrivate { shown = true } }
             } else {
                 RoundedRectangle(cornerRadius: 12)
                     .fill(.white.opacity(0.15))
@@ -611,6 +621,11 @@ struct EntryView: View {
 
     private var hers: some View {
         VStack(alignment: .leading, spacing: 6) {
+            // Her own pictures. They were only ever drawn in `mine`, so a
+            // picture she drew arrived, decoded, and was thrown away.
+            ForEach(entry.pictures) { picture in
+                SentPicture(picture: picture)
+            }
             if entry.waiting && entry.text.isEmpty {
                 bubble { ProgressView().controlSize(.small) }
             } else {

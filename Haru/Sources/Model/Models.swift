@@ -28,6 +28,19 @@ struct ServerMessage: Decodable {
         let name: String
         let kind: String
         let saved: String
+        /// Hers rather than his: drawn behind a tap. "private" is a keyword in
+        /// Swift, so the name here is ours and the key is the server's.
+        let isPrivate: Bool
+
+        private enum CodingKeys: String, CodingKey { case name, kind, saved, isPrivate = "private" }
+
+        init(from decoder: Decoder) throws {
+            let c = try decoder.container(keyedBy: CodingKeys.self)
+            name = (try? c.decodeIfPresent(String.self, forKey: .name)) ?? ""
+            kind = (try? c.decodeIfPresent(String.self, forKey: .kind)) ?? ""
+            saved = (try? c.decodeIfPresent(String.self, forKey: .saved)) ?? ""
+            isPrivate = (try? c.decodeIfPresent(Bool.self, forKey: .isPrivate)) ?? false
+        }
     }
 
     private enum CodingKeys: String, CodingKey { case id, role, content, at, reaction, note, aside, attachments, replyTo }
