@@ -23,7 +23,7 @@ final class EviCall: @unchecked Sendable {
         /// Her voice for one sentence, whole, as WAV bytes.
         case voice(Data)
         /// Her voice is about to stream as raw PCM at this rate.
-        case voiceStart(id: String, sampleRate: Double)
+        case voiceStart(id: String, sampleRate: Double, turn: Int?)
         /// A stretch of that voice.
         case pcm(Data)
         case voiceEnd(id: String)
@@ -38,6 +38,10 @@ final class EviCall: @unchecked Sendable {
     private let onEvent: @Sendable (Event) -> Void
     private let lock = NSLock()
     private var closed = false
+    private var inputSamples = 0
+    private var captureFrames: [(start:Int, end:Int, at:Double)] = []
+    private var turnCapture: [Int:Double] = [:]
+    private var measuredTurns: Set<Int> = []
 
     init(client: HaruClient, onEvent: @escaping @Sendable (Event) -> Void) {
         var parts = URLComponents(url: client.base.appendingPathComponent("/api/call/session"), resolvingAgainstBaseURL: false) ?? URLComponents()
@@ -68,8 +72,32 @@ final class EviCall: @unchecked Sendable {
     }
 
     /// A stretch of the microphone: 16 kHz mono PCM16, no header.
-    func send(_ pcm: Data) {
+    func send(_ pcm: Data, capturedAt:Double = .nan) {
+        lock.lock()
+        let end = inputSamples + pcm.count / 2
+        if capturedAt.isFinite { captureFrames.append((inputSamples,end,capturedAt)) }
+        if captureFrames.count > 2048 { captureFrames.removeFirst(captureFrames.count - 2048) }
+        inputSamples = end
+        lock.unlock()
         task.send(.data(pcm)) { _ in }
+    }
+
+    /// Hardware capture to first non-silent player render plus reported output
+    /// latency. This is a phone-side estimate, not an acoustic measurement.
+    func playbackEstimate(turn:Int, id:String, renderedAt:Double, outputMs:Double, primeMs:Double, underruns:Int) {
+        lock.lock()
+        let captured = turnCapture.removeValue(forKey:turn)
+        let permitted = !closed && !measuredTurns.contains(turn) && measuredTurns.count < 128
+        if permitted, captured != nil { measuredTurns.insert(turn) }
+        lock.unlock()
+        guard permitted, let captured else { return }
+        let elapsed = (renderedAt-captured)*1000
+        guard elapsed.isFinite, elapsed >= 0, elapsed <= 180000 else { return }
+        let payload:[String:Any] = ["type":"playback_timing","turn":turn,"id":id,
+            "captureToRenderEstimateMs":elapsed,"outputLatencyMs":outputMs,"primeMs":primeMs,"underruns":underruns]
+        if let data = try? JSONSerialization.data(withJSONObject:payload), let text = String(data:data,encoding:.utf8) {
+            task.send(.string(text)) { _ in }
+        }
     }
 
     /// Hangs up. The server's own `ended` for this is not reported back —
@@ -109,11 +137,20 @@ final class EviCall: @unchecked Sendable {
         switch event.type {
         case "ready": onEvent(.ready)
         case "refused": onEvent(.refused(event.reason ?? "The call could not be placed."))
-        case "user_message": onEvent(.heard(event.text ?? "", interim: event.interim ?? false))
+        case "user_message":
+            if let turn = event.turn, let end = event.speechEndSample {
+                lock.lock()
+                if let frame = captureFrames.last(where: { $0.start < end && $0.end >= end }) {
+                    turnCapture[turn] = frame.at + Double(end-frame.start)/16000
+                    if turnCapture.count > 32, let oldest = turnCapture.keys.min() { turnCapture.removeValue(forKey:oldest) }
+                }
+                lock.unlock()
+            }
+            onEvent(.heard(event.text ?? "", interim: event.interim ?? false))
         case "assistant_message": onEvent(.said(event.text ?? "", id: event.id ?? ""))
         case "audio_output":
             if let encoded = event.data, let wav = Data(base64Encoded: encoded) { onEvent(.voice(wav)) }
-        case "audio_start": onEvent(.voiceStart(id: event.id ?? "", sampleRate: event.sampleRate ?? 24_000))
+        case "audio_start": onEvent(.voiceStart(id: event.id ?? "", sampleRate: event.sampleRate ?? 24_000, turn:event.filler == false ? event.turn : nil))
         case "audio_end": onEvent(.voiceEnd(id: event.id ?? ""))
         case "filler": onEvent(.filler(event.text ?? ""))
         case "assistant_end": onEvent(.turnEnded(emotion: event.emotion))
@@ -146,4 +183,7 @@ private struct CallEvent: Decodable {
     let message: String?
     let sampleRate: Double?
     let emotion: String?
+    let turn: Int?
+    let speechEndSample: Int?
+    let filler: Bool?
 }

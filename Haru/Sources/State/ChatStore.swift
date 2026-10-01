@@ -167,7 +167,10 @@ final class ChatStore {
             if self.enrolling != nil { Task { await self.enrolTake(wav) }; return }
             Task { await self.hear(wav) }
         }
-        audio.onFrames = { [weak self] pcm in self?.call?.send(pcm) }
+        audio.onCapturedFrames = { [weak self] pcm, captured in self?.call?.send(pcm, capturedAt:captured) }
+        audio.onPlaybackEstimate = { [weak self] turn, id, rendered, output, prime, underruns in
+            self?.call?.playbackEstimate(turn:turn,id:id,renderedAt:rendered,outputMs:output,primeMs:prime,underruns:underruns)
+        }
         audio.onInterruption = { [weak self] began, _ in
             guard let self, self.standby else { return }
             if began {
@@ -820,10 +823,10 @@ final class ChatStore {
             callState = .speaking
         case .voice(let wav):
             play(wav)
-        case .voiceStart(_, let sampleRate):
+        case .voiceStart(let id, let sampleRate, let turn):
             // Streamed: whatever whole lines were queued are hers no longer.
             cancelLines()
-            audio.beginStream(sampleRate: sampleRate)
+            audio.beginStream(sampleRate: sampleRate, timingTurn:turn, timingID:id)
             call?.her(speaking: true)
             stage.attend("talking", ms: 4_000)
         case .pcm(let data):

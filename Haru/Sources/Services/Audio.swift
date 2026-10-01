@@ -26,6 +26,10 @@ final class Audio {
     /// The microphone as it comes, while a call is on: 16 kHz PCM16 frames of
     /// about forty milliseconds, no header, for the call socket.
     var onFrames: ((Data) -> Void)?
+    var onCapturedFrames: ((Data, Double) -> Void)?
+    var onPlaybackEstimate: ((Int, String, Double, Double, Double, Int) -> Void)?
+    private var playbackProbe: (turn:Int, id:String)?
+    private var streamUnderruns = 0
     /// Something else took the audio — a phone call, Siri, an alarm — or gave
     /// it back. `shouldResume` is iOS saying listening may start again.
     var onInterruption: ((_ began: Bool, _ shouldResume: Bool) -> Void)?
@@ -142,7 +146,7 @@ final class Audio {
     /// Her voice is about to arrive in pieces: mono 16-bit PCM at `sampleRate`.
     /// Each piece plays as it lands, one after another, so she starts talking
     /// at her first sentence rather than her last.
-    func beginStream(sampleRate: Double) {
+    func beginStream(sampleRate: Double, timingTurn:Int? = nil, timingID:String = "") {
         // The next sentence of the same call: it queues behind the one still
         // sounding. Stopping here cut the tail of every line, since her voice
         // is made faster than it plays (2026-09-18, "drops in and out").
@@ -158,6 +162,8 @@ final class Audio {
         streamCarry = nil
         streamPrimed = false
         streamQueued = 0
+        streamUnderruns = 0
+        playbackProbe = timingTurn.map { ($0, timingID) }
         guard let format = AVAudioFormat(commonFormat: .pcmFormatFloat32, sampleRate: sampleRate, channels: 1, interleaved: false) else { return }
         streamFormat = format
         engine.disconnectNodeOutput(player)
@@ -172,7 +178,7 @@ final class Audio {
         // produces audio faster than playback; measured again on 2026-09-29.
         // A slow connection still gets the larger recovery buffer below.
         let token = streamToken
-        streamPrimeAt = Self.primeSeconds
+        streamPrimeAt = UserDefaults.standard.bool(forKey: "callExperimental120msBuffer") ? 0.12 : Self.primeSeconds
         DispatchQueue.main.asyncAfter(deadline: .now() + 2.5) { [weak self] in self?.prime(token) }
         speaking = true
         ear.herTurn(true)
@@ -236,6 +242,7 @@ final class Audio {
         // late chunk the moment it lands — a word, a hole, a word — hold until
         // there is enough queued to keep going.
         if streamPending == 0, streamPrimed {
+            streamUnderruns += 1
             player.pause()
             streamPrimed = false
             streamQueued = 0
@@ -257,6 +264,7 @@ final class Audio {
         // Buffers can be scheduled while priming or paused after an underrun.
         // Stop those too, or an interrupted line leaks into the next one.
         player.stop()
+        playbackProbe = nil
         speaking = false
         ear.herTurn(false)
         removeMouthTap()
@@ -267,7 +275,8 @@ final class Audio {
         guard !mouthTapOn else { return }
         mouthTapOn = true
         let format = player.outputFormat(forBus: 0)
-        player.installTap(onBus: 0, bufferSize: 1024, format: format) { [weak self] buffer, _ in
+        let token = playToken
+        player.installTap(onBus: 0, bufferSize: 1024, format: format) { [weak self] buffer, time in
             guard let channels = buffer.floatChannelData else { return }
             let n = Int(buffer.frameLength)
             var sum: Float = 0
@@ -277,7 +286,18 @@ final class Audio {
             let rms = sqrt(sum / Float(max(n, 1)))
             // Speech peaks near 0.25 RMS; a little curve so quiet syllables still move the mouth.
             let open = Double(min(1, pow(rms / 0.25, 0.7)))
-            Task { @MainActor in self?.mouth(open) }
+            let first = (0..<n).first { abs(samples[$0]) > 0.001 }
+            let rendered = time.isHostTimeValid ? AVAudioTime.seconds(forHostTime: time.hostTime) : nil
+            Task { @MainActor in
+                guard let self, token == self.playToken else { return }
+                self.mouth(open)
+                if let first, let rendered, let probe = self.playbackProbe {
+                    self.playbackProbe = nil
+                    let output = AVAudioSession.sharedInstance().outputLatency
+                    self.onPlaybackEstimate?(probe.turn, probe.id, rendered + Double(first) / format.sampleRate + output,
+                                             output * 1000, self.streamPrimeAt * 1000, self.streamUnderruns)
+                }
+            }
         }
     }
 
@@ -311,10 +331,11 @@ final class Audio {
             let format = input.outputFormat(forBus: 0)
             ear.reset(sampleRate: format.sampleRate)
             input.removeTap(onBus: 0)
-            input.installTap(onBus: 0, bufferSize: 2048, format: format) { [weak self] buffer, _ in
+            input.installTap(onBus: 0, bufferSize: 2048, format: format) { [weak self] buffer, time in
                 guard let self else { return }
                 let heard = self.ear.feed(buffer)
-                Task { @MainActor in self.earSaid(heard) }
+                let captured = time.isHostTimeValid ? AVAudioTime.seconds(forHostTime: time.hostTime) : nil
+                Task { @MainActor in self.earSaid(heard, captured:captured) }
             }
             engine.prepare()
             try engine.start()
@@ -387,9 +408,12 @@ final class Audio {
         play(Wav.encode(frames: [samples], from: rate, to: rate))
     }
 
-    private func earSaid(_ heard: Ear.Heard) {
+    private func earSaid(_ heard: Ear.Heard, captured:Double?) {
         level = min(1, heard.level * 12)
-        if let frame = heard.frame { onFrames?(frame) }
+        if let frame = heard.frame {
+            onFrames?(frame)
+            onCapturedFrames?(frame, captured ?? .nan)
+        }
         if heard.started { onVoiceStart?() }
         if let segment = heard.segment { onVoiceEnd?(segment) }
     }
