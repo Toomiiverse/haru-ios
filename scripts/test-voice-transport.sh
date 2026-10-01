@@ -3,6 +3,8 @@ set -euo pipefail
 cd "$(dirname "$0")/.."
 test_dir=$(mktemp -d)
 trap 'rm -rf "$test_dir"' EXIT
+swiftc -parse-as-library -o "$test_dir/call-input-gate" Haru/Sources/Services/CallInputGate.swift scripts/call-input-gate.test.swift
+"$test_dir/call-input-gate"
 swiftc -parse-as-library -o "$test_dir/voice-transport" \
   Haru/Sources/Net/HaruClient.swift Haru/Sources/Model/Models.swift \
   Haru/Sources/Model/JSONValue.swift scripts/voice-transport.test.swift

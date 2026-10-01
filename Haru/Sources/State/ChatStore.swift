@@ -83,6 +83,10 @@ final class ChatStore {
     /// The call, when the mic is on and she is being reached through Hume.
     private(set) var call: EviCall?
     private(set) var callState = CallState.off
+    private(set) var callHoldSupported = false
+    private(set) var callManualInput = false
+    private(set) var callInputHeld = false
+    private(set) var callModePending = false
     /// What she said while a tool ran, for the pill; nil once the reply comes.
     private(set) var callFiller: String?
     /// Whether a call can be placed, from the server; nil until asked.
@@ -752,6 +756,10 @@ final class ChatStore {
             notice = "The microphone would not start: \(error.localizedDescription)"
             return
         }
+        callHoldSupported = false
+        callManualInput = false
+        callInputHeld = false
+        callModePending = false
         callState = .connecting
         callReply = ""
         callReplyID = nil
@@ -761,6 +769,20 @@ final class ChatStore {
         self.call = call
         audio.stream(true)
         call.start()
+    }
+
+    func setCallManualInput(_ enabled: Bool) {
+        guard callHoldSupported, !callModePending else { return }
+        callModePending = true
+        callInputHeld = false
+        call?.manualInput(enabled)
+    }
+
+    func holdCallInput(_ active: Bool) {
+        guard callManualInput, !callModePending else { return }
+        callInputHeld = active
+        if active { hush() }
+        call?.holdInput(active)
     }
 
     /// Hangs up, from this end or because the far end did.
@@ -778,6 +800,10 @@ final class ChatStore {
         idleWatch?.invalidate()
         idleWatch = nil
         callState = .off
+        callHoldSupported = false
+        callManualInput = false
+        callInputHeld = false
+        callModePending = false
         callFiller = nil
         callReply = ""
         callReplyID = nil
@@ -792,8 +818,15 @@ final class ChatStore {
             break
         }
         switch event {
-        case .ready:
+        case .ready(let pushToTalk):
+            callHoldSupported = pushToTalk
             callState = .listening
+        case .inputMode(let manual):
+            callManualInput = manual
+            callInputHeld = false
+            callModePending = false
+        case .inputGate(let active):
+            if !active { callInputHeld = false }
         case .refused(let why):
             notice = why
             endCall()

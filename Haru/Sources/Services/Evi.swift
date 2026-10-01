@@ -12,7 +12,9 @@ import Foundation
 /// A call runs only while the mic is on. Typed messages keep their own voice.
 final class EviCall: @unchecked Sendable {
     enum Event {
-        case ready
+        case ready(pushToTalk: Bool)
+        case inputMode(manual: Bool)
+        case inputGate(active: Bool)
         case refused(String)
         /// What was heard them say. Interim while they are still talking.
         case heard(String, interim: Bool)
@@ -38,6 +40,7 @@ final class EviCall: @unchecked Sendable {
     private let onEvent: @Sendable (Event) -> Void
     private let lock = NSLock()
     private var closed = false
+    private var inputGate = CallInputGate()
     private var inputSamples = 0
     private var captureFrames: [(start:Int, end:Int, at:Double)] = []
     private var turnCapture: [Int:Double] = [:]
@@ -74,12 +77,27 @@ final class EviCall: @unchecked Sendable {
     /// A stretch of the microphone: 16 kHz mono PCM16, no header.
     func send(_ pcm: Data, capturedAt:Double = .nan) {
         lock.lock()
+        guard !closed, inputGate.sendsAudio else { lock.unlock(); return }
         let end = inputSamples + pcm.count / 2
         if capturedAt.isFinite { captureFrames.append((inputSamples,end,capturedAt)) }
         if captureFrames.count > 2048 { captureFrames.removeFirst(captureFrames.count - 2048) }
         inputSamples = end
         lock.unlock()
         task.send(.data(pcm)) { _ in }
+    }
+
+    func manualInput(_ enabled: Bool) {
+        lock.lock()
+        inputGate.select(enabled)
+        lock.unlock()
+        task.send(.string("{\"type\":\"input_mode\",\"manual\":\(enabled)}")) { _ in }
+    }
+
+    func holdInput(_ active: Bool) {
+        lock.lock()
+        guard !closed, inputGate.hold(active) else { lock.unlock(); return }
+        lock.unlock()
+        task.send(.string("{\"type\":\"input_gate\",\"active\":\(active)}")) { _ in }
     }
 
     /// Hardware capture to first non-silent player render plus reported output
@@ -135,7 +153,15 @@ final class EviCall: @unchecked Sendable {
         guard let data = text.data(using: .utf8),
               let event = try? JSONDecoder().decode(CallEvent.self, from: data) else { return }
         switch event.type {
-        case "ready": onEvent(.ready)
+        case "ready": onEvent(.ready(pushToTalk: event.pushToTalk == true))
+        case "input_mode":
+            guard let enabled = event.manual else { return }
+            lock.lock(); inputGate.acknowledge(enabled); lock.unlock()
+            onEvent(.inputMode(manual: enabled))
+        case "input_gate":
+            guard let active = event.active else { return }
+            lock.lock(); inputGate.serverGate(active); lock.unlock()
+            onEvent(.inputGate(active: active))
         case "refused": onEvent(.refused(event.reason ?? "The call could not be placed."))
         case "user_message":
             if let turn = event.turn, let end = event.speechEndSample {
@@ -186,4 +212,7 @@ private struct CallEvent: Decodable {
     let turn: Int?
     let speechEndSample: Int?
     let filler: Bool?
+    let pushToTalk: Bool?
+    let manual: Bool?
+    let active: Bool?
 }

@@ -23,6 +23,7 @@ struct ChatView: View {
     @Environment(Navigator.self) private var nav
     @Environment(\.scenePhase) private var phase
     @State private var draft = ""
+    @GestureState private var holdingTalk = false
     /// What was just sent and when, so a dictation transcript that lands in
     /// the box after the send is known for what it is.
     @State private var lastSent: (text: String, at: Date)?
@@ -76,7 +77,7 @@ struct ChatView: View {
             Task { await chat.askIfSheHasSomethingToSay() }
         }
         .onChange(of: phase) { _, now in
-            guard now == .active else { return }
+            guard now == .active else { chat.holdCallInput(false); return }
             Task {
                 // Re-read the day unless she is mid-answer, when the stream on
                 // screen is newer than anything the server would hand back.
@@ -291,6 +292,23 @@ struct ChatView: View {
 
     private var composer: some View {
         VStack(spacing: 6) {
+            if chat.callHoldSupported {
+                Toggle("Hold to talk", isOn: Binding(get: { chat.callManualInput }, set: { chat.setCallManualInput($0) }))
+                    .font(.footnote).padding(.horizontal, 12).disabled(chat.callModePending)
+                if chat.callManualInput {
+                    Text(chat.callInputHeld ? "Listening — release to send" : "Hold here to talk")
+                        .frame(maxWidth: .infinity).padding(12)
+                        .background(chat.callInputHeld ? Color.red.opacity(0.2) : Color.accentColor.opacity(0.15), in: RoundedRectangle(cornerRadius: 12))
+                        .contentShape(Rectangle())
+                        .gesture(DragGesture(minimumDistance: 0).updating($holdingTalk) { _, held, _ in held = true })
+                        .onChange(of: holdingTalk) { _, held in chat.holdCallInput(held) }
+                        .onDisappear { chat.holdCallInput(false) }
+                        .accessibilityLabel("Hold to speak; release to send")
+                        .accessibilityAction(named: "Start speaking") { chat.holdCallInput(true) }
+                        .accessibilityAction(named: "Send speech") { chat.holdCallInput(false) }
+                        .padding(.horizontal, 12)
+                }
+            }
             if let target = chat.replyingTo { replyBar(target) }
             if !chat.staged.isEmpty { chips }
             if chat.talkState != .off || chat.callState != .off || chat.standby { talkPill }
@@ -368,9 +386,9 @@ struct ChatView: View {
         let echo = chat.audio.echoCancelled ? "" : " · no echo cancelling"
         switch chat.callState {
         case .connecting: return "Calling her…"
-        case .listening: return "On a call — just talk" + echo
+        case .listening: return (chat.callManualInput ? "Microphone sent only while held" : "Start each request with Haru") + echo
         case .thinking: return "Thinking…"
-        case .speaking: return chat.callFiller.map { "“\($0)” — looking that up" } ?? "Speaking… talk over her to cut in"
+        case .speaking: return chat.callFiller.map { "“\($0)” — looking that up" } ?? (chat.callManualInput ? "Speaking… hold to interrupt" : "Speaking… say Haru to cut in")
         case .off: break
         }
         switch chat.talkState {
