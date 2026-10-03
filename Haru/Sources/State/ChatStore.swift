@@ -341,13 +341,7 @@ final class ChatStore {
         var ignored = false
         var failure: String?
         var begun = false
-        // How much of what is on screen she has already been given to say.
-        var spoken = 0
-        // The first line goes out as soon as one sentence has ended, for the
-        // sake of her first word; after that, whole paragraphs or a good run
-        // of sentences — one take per stretch keeps her timbre steady, where a
-        // take per sentence made her sound assembled.
-        var firstLineOut = false
+        var delivery = ChatSpeechDelivery()
         do {
             for try await event in stream {
                 if let error = event.error {
@@ -356,7 +350,7 @@ final class ChatStore {
                     // The round was thrown away; back to waiting, and whatever
                     // she had started saying of it goes too.
                     said = ""
-                    spoken = 0
+                    delivery.reset()
                     hush()
                     paint(id, "", waiting: true)
                 } else if let chunk = event.text, !chunk.isEmpty {
@@ -367,27 +361,9 @@ final class ChatStore {
                     }
                     said += chunk
                     paint(id, said, waiting: false)
-                    // A sentence that has ended is a sentence she can start
-                    // saying while the rest is still being written.
-                    // Short ones ride with the next, so "Fine." is not a line of its own.
-                    var cursor = spoken
-                    while let end = Self.sentenceEnd(in: said, after: cursor) {
-                        let raw = String(said.dropFirst(spoken).prefix(end - spoken))
-                        let piece = raw.trimmingCharacters(in: .whitespacesAndNewlines)
-                        cursor = end
-                        let paragraphEnds = said.dropFirst(end).hasPrefix("\n")
-                        let enough = piece.count >= (firstLineOut ? 160 : 40)
-                        if piece.count >= 40 && (enough || paragraphEnds) {
-                            // A new paragraph is where she breathes: one of her
-                            // recorded sighs goes in the gap, as it does at the desk.
-                            let newParagraph = spoken > 0 && (raw.hasPrefix("\n") || said.dropFirst(max(0, spoken - 2)).prefix(2) == "\n\n")
-                            if newParagraph { sigh() }
-                            // In the mood she is in — the new one lands after
-                            // the words, and the lines after it take it up.
-                            say(piece, emotion: emotion, gap: newParagraph ? 450 : 280)
-                            spoken = end
-                            firstLineOut = true
-                        }
+                } else if let sentence = event.sentence {
+                    for line in delivery.receive(sentence, emotion: event.emotion) {
+                        say(line.text, emotion: line.emotion)
                     }
                 } else if event.done == true {
                     reply = event.reply
@@ -418,15 +394,12 @@ final class ChatStore {
         // By voice, she is now speaking until her last line ends; if no voice
         // ever starts, the queue hands the turn back on its own.
         if let talk { act(talk.replied(now, willSpeak: true)) }
-        // The rest of it, and her face for the whole. Neither is waited for.
-        let rest = String(final.dropFirst(min(spoken, final.count))).trimmingCharacters(in: .whitespacesAndNewlines)
-        if !rest.isEmpty {
-            let newParagraph = spoken > 0 && String(final.dropFirst(min(spoken, final.count))).hasPrefix("\n")
-            if newParagraph { sigh() }
-            say(rest, emotion: emotion, gap: newParagraph ? 450 : 280)
-        } else {
-            drain()
+        // Sentence events carry the server's delivery; visible text is never
+        // voiced a second time. Older servers without events use one final take.
+        for line in delivery.finish(fallbackText: final) {
+            say(line.text, emotion: line.emotion)
         }
+        drain()
         Task { await express(final) }
         // The reply's id — what a thumb or a retry needs — only exists on the
         // server. A quiet reload picks it up, and anything she added since.

@@ -75,6 +75,8 @@ struct ChatPage: Decodable { let messages: [ServerMessage] }
 /// One `data:` line of /api/chat/stream or /api/chat/retry.
 struct StreamEvent: Decodable {
     let text: String?
+    let sentence: String?
+    let emotion: String?
     let done: Bool?
     let reply: String?
     let ignored: Bool?
