@@ -3,9 +3,19 @@ import Foundation
 actor CharacterTestServer {
     var sent = 0
     var receipts = 0
+    var saves = 0
+    var profile: [String: Any]?
     let state = #"{"mode":"character","revision":1,"character":{"slug":"batman","name":"Batman","description":"Detective","photoUrl":"","shareUrl":"","tags":[],"adult":false,"catalogModel":"other-model","model":"venice-uncensored-1-2"},"sceneId":"scene","messages":[],"pendingRequestId":null,"error":null,"model":"venice-uncensored-1-2"}"#
     func call(_ body: [String: JSONValue]) throws -> Data {
         let op = body["op"]?.stringValue ?? ""
+        if op == "custom-save" {
+            saves += 1
+            profile = ["slug":"custom_test","name":body["name"]!.stringValue!,"description":body["description"]!.stringValue!,"instructions":body["instructions"]!.stringValue!,"background":body["background"]!.stringValue!,"profileId":body["profileId"]!.stringValue!.lowercased(),"profileRevision":1,"custom":true,"photoUrl":"","shareUrl":"","tags":[],"adult":false,"catalogModel":"venice-uncensored-1-2","model":"venice-uncensored-1-2"]
+            throw URLError(.networkConnectionLost)
+        }
+        if op == "custom-list" {
+            return try JSONSerialization.data(withJSONObject: ["characters":profile.map { [$0] } ?? [],"offset":0,"hasMore":false,"model":"venice-uncensored-1-2"])
+        }
         if op == "send" { sent += 1; throw URLError(.networkConnectionLost) }
         if op == "receipt" {
             receipts += 1
@@ -38,6 +48,14 @@ struct HaruClient: Sendable {
         precondition(receipts >= 1, "The original receipt must be checked.")
         precondition(!store.waiting, "Terminal unknown should permit the user to start a new turn.")
         precondition(store.problem == "Unconfirmed; not resent.")
+        let profileId = UUID().uuidString
+        let saved = await store.saveProfile(id: profileId, revision: 0, name: "Mira", description: "Navigator", instructions: "Speak warmly", background: "Starship Dawn", client: client)
+        precondition(saved?.profileId == profileId.lowercased(), "A lost save must recover the persisted original profile.")
+        precondition(store.myCharacters.count == 1)
+        let saves = await server.saves
+        precondition(saves == 1, "An uncertain save must not automatically post again.")
+        precondition(!store.savingProfile)
+        print("Custom character save recovery passed; one save and no automatic resend.")
         print("Roleplay receipt recovery passed; no automatic resend.")
     }
 }

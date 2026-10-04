@@ -6,6 +6,8 @@ import Observation
 final class RoleplayStore {
     private let sessionId: String
     var state: RoleplayState?
+    var myCharacters: [VeniceCharacter] = []
+    var savingProfile = false
     var characters: [VeniceCharacter] = []
     var problem: String?
     var changing = false
@@ -48,6 +50,53 @@ final class RoleplayStore {
             offset = result.offset + result.characters.count
             hasMore = result.hasMore
         } catch { problem = error.localizedDescription }
+    }
+    func library(_ client: HaruClient) async {
+        do {
+            let result: CharacterCatalog = try await client.post("/api/roleplay", body("custom-list"))
+            myCharacters = result.characters
+        } catch { problem = error.localizedDescription }
+    }
+    func saveProfile(id: String, revision: Int, name: String, description: String, instructions: String, background: String, client: HaruClient) async -> VeniceCharacter? {
+        guard !savingProfile else { return nil }
+        savingProfile = true
+        defer { savingProfile = false }
+        do {
+            let saved: VeniceCharacter = try await client.post("/api/roleplay", body("custom-save", [
+                "profileId": .string(id), "profileRevision": .number(Double(revision)),
+                "name": .string(name), "description": .string(description),
+                "instructions": .string(instructions), "background": .string(background),
+            ]))
+            await library(client)
+            return saved
+        } catch {
+            // Recover a lost save response by reading; never blindly create another profile.
+            await library(client)
+            if let saved = myCharacters.first(where: { $0.profileId?.lowercased() == id.lowercased() }),
+               saved.profileRevision == revision + 1,
+               saved.name == name.trimmingCharacters(in: .whitespacesAndNewlines),
+               saved.description == description.trimmingCharacters(in: .whitespacesAndNewlines),
+               saved.instructions == instructions.trimmingCharacters(in: .whitespacesAndNewlines),
+               saved.background == background.trimmingCharacters(in: .whitespacesAndNewlines) { return saved }
+            problem = error.localizedDescription
+            return nil
+        }
+    }
+    func deleteProfile(_ character: VeniceCharacter, _ client: HaruClient) async -> Bool {
+        guard let id = character.profileId, let revision = character.profileRevision, !savingProfile else { return false }
+        savingProfile = true
+        defer { savingProfile = false }
+        do {
+            let result: CharacterCatalog = try await client.post("/api/roleplay", body("custom-delete", ["profileId": .string(id), "profileRevision": .number(Double(revision))]))
+            myCharacters = result.characters
+            await load(client)
+            return true
+        } catch {
+            await library(client)
+            await load(client)
+            problem = error.localizedDescription
+            return false
+        }
     }
     func more(_ client: HaruClient) async { await catalog(client, search: search, more: true) }
     func select(_ character: VeniceCharacter, _ client: HaruClient) async -> Bool {

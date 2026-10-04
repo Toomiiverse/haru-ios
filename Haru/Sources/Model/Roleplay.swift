@@ -2,6 +2,11 @@ import Foundation
 
 struct VeniceCharacter: Codable, Identifiable, Equatable, Sendable {
     var id: String { slug }
+    let custom: Bool?
+    let profileId: String?
+    let profileRevision: Int?
+    let instructions: String?
+    let background: String?
     let slug: String
     let name: String
     let description: String
