@@ -17,6 +17,7 @@ xcodebuild -version
 node --test scripts/verify-testflight.test.mjs
 bash scripts/test-voice-transport.sh
 bash scripts/test-chat-delivery.sh
+bash scripts/test-roleplay.sh
 
 command -v xcodegen >/dev/null || brew install xcodegen
 

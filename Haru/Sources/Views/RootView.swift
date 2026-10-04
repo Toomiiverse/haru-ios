@@ -28,7 +28,7 @@ struct MainTabs: View {
     var body: some View {
         @Bindable var nav = nav
         TabView(selection: $nav.tab) {
-            ChatView()
+            ConversationView()
                 .tabItem { Label("Chat", systemImage: "bubble.left.and.bubble.right.fill") }
                 .tag(Navigator.Tab.chat)
             StatusView()
