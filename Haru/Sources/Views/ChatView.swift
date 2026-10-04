@@ -61,7 +61,16 @@ struct ChatView: View {
                 .onAppear { topInset = geo.safeAreaInsets.top }
                 .onChange(of: geo.safeAreaInsets.top) { _, now in topInset = now }
             }
-            .toolbar { ToolbarItem(placement: .principal) { header } }
+            .toolbar {
+                ToolbarItem(placement: .principal) { header }
+                ToolbarItem(placement: .topBarTrailing) {
+                    Button {
+                        Task { await refreshChat() }
+                    } label: { Label("Refresh chat", systemImage: "arrow.clockwise") }
+                    .disabled(chat.busy || chat.loading || chat.call != nil)
+                    .accessibilityHint("Reload messages from the server")
+                }
+            }
             .navigationBarTitleDisplayMode(.inline)
             .toolbarBackground(.hidden, for: .navigationBar)
         }
@@ -276,12 +285,19 @@ struct ChatView: View {
                     .init(color: Color(uiColor: .systemBackground), location: 0.4),
                 ], startPoint: .top, endPoint: .bottom)
             )
+            .refreshable { await refreshChat() }
             .defaultScrollAnchor(.bottom)
             .scrollDismissesKeyboard(.interactively)
             .onChange(of: chat.entries.count) { _, _ in proxy.scrollTo("end", anchor: .bottom) }
             .onChange(of: chat.entries.last?.text) { _, _ in proxy.scrollTo("end", anchor: .bottom) }
             .onTapGesture { typing = false }
         }
+    }
+
+    private func refreshChat() async {
+        guard !chat.busy, !chat.loading, chat.call == nil else { return }
+        await chat.load()
+        await refreshStanding()
     }
 
     // MARK: Composer

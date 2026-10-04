@@ -52,6 +52,7 @@ struct CharacterChatView: View {
     @State private var draft = ""
     @State private var newScene = false
     @State private var saveContext = false
+    @State private var refreshing = false
 
     var body: some View {
         NavigationStack {
@@ -85,7 +86,7 @@ struct CharacterChatView: View {
                             Color.clear.frame(height: 1).id("end")
                         }.padding(.horizontal, 16)
                     }
-                    .refreshable { await store.load(session.client) }
+                    .refreshable { await refreshChat() }
                     .onChange(of: store.state?.messages.count) { _, _ in withAnimation { proxy.scrollTo("end", anchor: .bottom) } }
                 }
                 HStack(alignment: .bottom, spacing: 10) {
@@ -106,6 +107,11 @@ struct CharacterChatView: View {
             .toolbar {
                 ToolbarItem(placement: .bottomBar) { Button("Save chat for Haru") { saveContext = true }.disabled(store.waiting || store.state?.messages.isEmpty != false) }
                 ToolbarItem(placement: .topBarLeading) { Button("My Characters") { chooseCharacter = true }.disabled(store.waiting) }
+                ToolbarItem(placement: .topBarTrailing) {
+                    Button { Task { await refreshChat() } } label: { Label("Refresh chat", systemImage: "arrow.clockwise") }
+                        .disabled(refreshing)
+                        .accessibilityHint("Reload messages and check the existing reply")
+                }
                 ToolbarItem(placement: .topBarTrailing) { Button("New scene") { newScene = true }.disabled(store.waiting) }
             }
             .sheet(isPresented: $saveContext) { SaveSceneReference(store: store) }
@@ -113,6 +119,13 @@ struct CharacterChatView: View {
                 Button("New scene") { Task { await store.newScene(session.client) } }
             } message: { Text("Your current scene will be kept on the server.") }
         }
+    }
+
+    private func refreshChat() async {
+        guard !refreshing else { return }
+        refreshing = true
+        defer { refreshing = false }
+        await store.load(session.client)
     }
 }
 
