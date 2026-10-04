@@ -5,12 +5,13 @@ actor CharacterTestServer {
     var receipts = 0
     var saves = 0
     var profile: [String: Any]?
-    let state = #"{"mode":"character","revision":1,"character":{"slug":"batman","name":"Batman","description":"Detective","photoUrl":"","shareUrl":"","tags":[],"adult":false,"catalogModel":"other-model","model":"venice-uncensored-1-2"},"sceneId":"scene","messages":[],"pendingRequestId":null,"error":null,"model":"venice-uncensored-1-2"}"#
+    let state = #"{"mode":"character","revision":1,"character":{"slug":"custom_test","name":"Batman","description":"Detective","photoUrl":"","shareUrl":"","tags":[],"adult":false,"catalogModel":"other-model","model":"venice-uncensored-1-2"},"sceneId":"scene","messages":[],"pendingRequestId":null,"error":null,"model":"venice-uncensored-1-2"}"#
     func call(_ body: [String: JSONValue]) throws -> Data {
         let op = body["op"]?.stringValue ?? ""
         if op == "custom-save" {
             saves += 1
             profile = ["slug":"custom_test","name":body["name"]!.stringValue!,"description":body["description"]!.stringValue!,"instructions":body["instructions"]!.stringValue!,"background":body["background"]!.stringValue!,"profileId":body["profileId"]!.stringValue!.lowercased(),"profileRevision":1,"custom":true,"photoUrl":"","shareUrl":"","tags":[],"adult":false,"catalogModel":"venice-uncensored-1-2","model":"venice-uncensored-1-2"]
+            if let creator = body["creator"] { profile?["creator"] = try JSONSerialization.jsonObject(with: JSONEncoder().encode(creator)) }
             throw URLError(.networkConnectionLost)
         }
         if op == "custom-list" {
@@ -39,7 +40,7 @@ struct HaruClient: Sendable {
         let server = CharacterTestServer()
         let client = HaruClient(server: server)
         await store.load(client)
-        precondition(store.state?.character?.slug == "batman")
+        precondition(store.state?.character?.slug == "custom_test")
         let accepted = await store.send("Begin the scene.", client)
         precondition(accepted, "An uncertain accepted reply must remain associated with its original request.")
         let sent = await server.sent
@@ -49,9 +50,16 @@ struct HaruClient: Sendable {
         precondition(!store.waiting, "Terminal unknown should permit the user to start a new turn.")
         precondition(store.problem == "Unconfirmed; not resent.")
         let profileId = UUID().uuidString
-        let saved = await store.saveProfile(id: profileId, revision: 0, name: "Mira", description: "Navigator", instructions: "Speak warmly", background: "Starship Dawn", client: client)
+        var creator = CreatorFields()
+        creator.model = "zai-org-glm-5-1"
+        creator.intro = "Welcome aboard."
+        creator.documents = [CreatorDocument(name: "lore.md", text: "The Dawn orbits a blue moon.")]
+        creator.insightsEnabled = true
+        creator.insights = ["relationship": ["tone": "Warm and playful"]]
+        let saved = await store.saveProfile(id: profileId, revision: 0, name: "Mira", description: "Navigator", instructions: "Speak warmly", background: "Starship Dawn", creator: creator, client: client)
         precondition(saved?.profileId == profileId.lowercased(), "A lost save must recover the persisted original profile.")
         precondition(store.myCharacters.count == 1)
+        precondition(saved?.creator == creator, "Lost save recovery must preserve model, documents and insights.")
         let saves = await server.saves
         precondition(saves == 1, "An uncertain save must not automatically post again.")
         precondition(!store.savingProfile)

@@ -8,7 +8,9 @@ final class RoleplayStore {
     var state: RoleplayState?
     var myCharacters: [VeniceCharacter] = []
     var savingProfile = false
-    var characters: [VeniceCharacter] = []
+    var models: [VeniceModel] = []
+    var references: [HaruReference] = []
+    var creatorWorking = false
     var problem: String?
     var changing = false
     var loadingCatalog = false
@@ -37,35 +39,22 @@ final class RoleplayStore {
             if let id = state?.pendingRequestId ?? unconfirmedId { startPolling(id, client) }
         } catch { problem = error.localizedDescription }
     }
-    func catalog(_ client: HaruClient, search: String, more: Bool = false) async {
-        guard !loadingCatalog else { return }
-        loadingCatalog = true
-        defer { loadingCatalog = false }
-        do {
-            let result: CharacterCatalog = try await client.post("/api/roleplay", body("catalog", [
-                "search": .string(search), "offset": .number(Double(more ? offset : 0)),
-            ]))
-            self.search = search
-            characters = more ? characters + result.characters : result.characters
-            offset = result.offset + result.characters.count
-            hasMore = result.hasMore
-        } catch { problem = error.localizedDescription }
-    }
     func library(_ client: HaruClient) async {
         do {
             let result: CharacterCatalog = try await client.post("/api/roleplay", body("custom-list"))
             myCharacters = result.characters
         } catch { problem = error.localizedDescription }
     }
-    func saveProfile(id: String, revision: Int, name: String, description: String, instructions: String, background: String, client: HaruClient) async -> VeniceCharacter? {
+    func saveProfile(id: String, revision: Int, name: String, description: String, instructions: String, background: String, creator: CreatorFields = CreatorFields(), client: HaruClient) async -> VeniceCharacter? {
         guard !savingProfile else { return nil }
         savingProfile = true
         defer { savingProfile = false }
         do {
+            let creatorValue = try JSONDecoder().decode(JSONValue.self, from: JSONEncoder().encode(creator))
             let saved: VeniceCharacter = try await client.post("/api/roleplay", body("custom-save", [
                 "profileId": .string(id), "profileRevision": .number(Double(revision)),
                 "name": .string(name), "description": .string(description),
-                "instructions": .string(instructions), "background": .string(background),
+                "instructions": .string(instructions), "background": .string(background), "creator": creatorValue,
             ]))
             await library(client)
             return saved
@@ -77,7 +66,8 @@ final class RoleplayStore {
                saved.name == name.trimmingCharacters(in: .whitespacesAndNewlines),
                saved.description == description.trimmingCharacters(in: .whitespacesAndNewlines),
                saved.instructions == instructions.trimmingCharacters(in: .whitespacesAndNewlines),
-               saved.background == background.trimmingCharacters(in: .whitespacesAndNewlines) { return saved }
+               saved.background == background.trimmingCharacters(in: .whitespacesAndNewlines),
+               (saved.creator ?? CreatorFields()) == creator { return saved }
             problem = error.localizedDescription
             return nil
         }
@@ -98,7 +88,68 @@ final class RoleplayStore {
             return false
         }
     }
-    func more(_ client: HaruClient) async { await catalog(client, search: search, more: true) }
+
+    func loadModels(_ client: HaruClient) async {
+        do {
+            let result: VeniceModels = try await client.post("/api/roleplay", body("models"))
+            models = result.models
+        } catch { problem = error.localizedDescription }
+    }
+    func importDocument(_ data: Data, name: String, client: HaruClient) async throws -> CreatorDocument {
+        guard data.count <= 5_000_000 else { throw NSError(domain: "My Creator", code: 1, userInfo: [NSLocalizedDescriptionKey: "Use a document smaller than 5 MB."]) }
+        return try await client.post("/api/roleplay", body("document", ["fileName": .string(name), "fileData": .string(data.base64EncodedString())]))
+    }
+    func loadReferences(_ client: HaruClient) async {
+        do {
+            let result: HaruReferences = try await client.post("/api/roleplay", body("context-list"))
+            references = result.references
+        } catch { problem = error.localizedDescription }
+    }
+    func saveReference(id: String, label: String, guidance: String, messageIds: [String], client: HaruClient) async -> Bool {
+        guard let current = state, !creatorWorking else { return false }
+        creatorWorking = true
+        defer { creatorWorking = false }
+        do {
+            let _: HaruReference = try await client.post("/api/roleplay", body("context-save", [
+                "referenceId": .string(id), "label": .string(label), "guidance": .string(guidance),
+                "messageIds": .array(messageIds.map(JSONValue.string)), "revision": .number(Double(current.revision)),
+            ]))
+            await loadReferences(client)
+            return true
+        } catch {
+            await loadReferences(client)
+            if references.contains(where: { $0.id.lowercased() == id.lowercased() && $0.label == label.trimmingCharacters(in: .whitespacesAndNewlines) && $0.guidance == guidance.trimmingCharacters(in: .whitespacesAndNewlines) }) { return true }
+            problem = error.localizedDescription
+            return false
+        }
+    }
+    func removeReference(_ reference: HaruReference, _ client: HaruClient) async {
+        do {
+            let result: HaruReferences = try await client.post("/api/roleplay", body("context-delete", ["referenceId": .string(reference.id), "referenceRevision": .number(Double(reference.revision))]))
+            references = result.references
+        } catch { problem = error.localizedDescription; await loadReferences(client) }
+    }
+    func auxiliary(_ op: String, id: String, fields: [String: JSONValue], client: HaruClient) async -> String? {
+        guard !creatorWorking else { return nil }
+        creatorWorking = true
+        defer { creatorWorking = false }
+        var fields = fields
+        fields["requestId"] = .string(id)
+        if let state { fields["revision"] = .number(Double(state.revision)) }
+        do {
+            var receipt: RoleplayReceipt
+            do { receipt = try await client.post("/api/roleplay", body(op, fields)) }
+            catch { receipt = try await client.post("/api/roleplay", body("receipt", ["requestId": .string(id)])) }
+            for _ in 0..<180 {
+                if receipt.status == "done" { return receipt.reply }
+                if receipt.status != "pending" { problem = receipt.error ?? "Creator result could not be confirmed. It was not resent."; return nil }
+                try await Task.sleep(for: .seconds(1))
+                receipt = try await client.post("/api/roleplay", body("receipt", ["requestId": .string(id)]))
+            }
+            problem = "Creator result is still pending. Its original request will not be resent."
+        } catch { problem = error.localizedDescription }
+        return nil
+    }
     func select(_ character: VeniceCharacter, _ client: HaruClient) async -> Bool {
         await change("select", ["slug": .string(character.slug)], client)
     }
