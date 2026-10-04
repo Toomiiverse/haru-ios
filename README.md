@@ -169,3 +169,11 @@ CalDAV with the iOS 13 Reminders upgrade, so the server cannot write them.
 - **The Live2D model.** Her animated model was tried on the stage and set
   aside: 29 MB over the tailnet and a web renderer on the phone for a face the
   SVG does in 30 KB. The stage plumbing (`haru-stage://`) would carry it again.
+
+### AI and Character mode
+
+The Chat tab now has an AI / Character segmented switch. AI opens the existing Haru chat. Character opens a searchable picker of published Venice personas, followed by a separate roleplay transcript. Switching back resumes the selected character's scene. “New scene” keeps the previous transcript on the server and starts an empty one.
+
+The server applies `venice_parameters.character_slug` and uses Venice Uncensored (`venice-uncensored-1-2`), independently of a character's catalog default model. Character mode has no Haru memory injection, action tools, proactive messages, calls, or speech. Calls and typed-message speech remain in AI mode. Character replies use the normal hosted conversation allowance. A connection failure checks the original durable receipt and never automatically resends the message. Unconfirmed outcomes stay visible.
+
+Requires the Core roleplay feature and authenticated `/api/roleplay` bridge. The browser equivalent is `/characters`, linked from the AI page. Client sessions have separate scene histories; changing mode does not change Haru's identity or global model settings.
