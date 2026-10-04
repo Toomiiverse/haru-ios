@@ -52,6 +52,10 @@ struct CharacterChatView: View {
             VStack(spacing: 12) {
                 Text("Roleplay through Venice · Separate scene history")
                     .font(.caption).foregroundStyle(.secondary)
+                if let issue = store.state?.error {
+                    Text(issue).font(.footnote).foregroundStyle(.orange)
+                        .padding(.horizontal, 16).accessibilityLabel("Unconfirmed character reply: " + issue)
+                }
                 ScrollViewReader { proxy in
                     ScrollView {
                         LazyVStack(alignment: .leading, spacing: 12) {
