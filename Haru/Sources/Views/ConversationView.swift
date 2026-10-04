@@ -231,6 +231,7 @@ struct CharacterEditor: View {
                 if section == "Settings" { settings }
                 if busy { HStack { ProgressView(); Text("Working…") } }
                 if let issue { Text(issue).foregroundStyle(.orange) }
+                if auxiliaryId != nil && !busy { Button("Start a new creator attempt") { auxiliaryId = nil; issue = nil } }
             }
             .navigationTitle("My Creator")
             .toolbar {
@@ -315,6 +316,7 @@ struct CharacterEditor: View {
             Toggle("Use character insights", isOn: $draft.creator.insightsEnabled)
             Text("Editable profiles for this roleplay. Haru learns only from references you explicitly save for her.").font(.footnote).foregroundStyle(.secondary)
             if draft.creator.insightsEnabled {
+                Button("Draft insights from current scene") { draftInsights() }.disabled(busy || store.state?.messages.isEmpty != false)
                 Picker("Profile", selection: $insightGroup) { Text("User").tag("user"); Text("Character").tag("character"); Text("Relationship").tag("relationship") }.pickerStyle(.segmented)
                 ForEach(insightFields, id: \.0) { key, label in
                     Section(label) { TextField(label, text: Binding(get: { draft.creator.insights[insightGroup]?[key] ?? "" }, set: { draft.creator.insights[insightGroup, default: [:]][key] = $0 }), axis: .vertical).lineLimit(2...5) }
@@ -388,6 +390,20 @@ struct CharacterEditor: View {
                     draft.name = result.name; draft.description = result.description ?? draft.description; draft.instructions = result.instructions
                     draft.creator.intro = result.intro ?? ""; draft.creator.tags = result.tags ?? draft.creator.tags
                     auxiliaryId = nil; section = "Instructions"
+                } else { issue = store.problem; store.problem = nil }
+            } catch { issue = error.localizedDescription }
+        }
+    }
+    private func draftInsights() {
+        Task {
+            do {
+                let creator = try JSONDecoder().decode(JSONValue.self, from: JSONEncoder().encode(draft.creator))
+                let id = auxiliaryId ?? UUID().uuidString
+                auxiliaryId = id
+                if let text = await store.auxiliary("insight-extract", id: id, fields: ["text": .string("Draft editable insights from confirmed fictional dialogue."), "creator": creator], client: session.client) {
+                    draft.creator.insights = try JSONDecoder().decode([String: [String: String]].self, from: Data(text.utf8))
+                    draft.creator.insightsEnabled = true
+                    auxiliaryId = nil
                 } else { issue = store.problem; store.problem = nil }
             } catch { issue = error.localizedDescription }
         }
@@ -481,6 +497,7 @@ struct HaruReferenceLibrary: View {
     @Environment(\.dismiss) private var dismiss
     var store: RoleplayStore
     @State private var deleting: HaruReference?
+    @State private var editing: HaruReference?
     var body: some View {
         NavigationStack {
             List {
@@ -490,16 +507,49 @@ struct HaruReferenceLibrary: View {
                         Text(reference.guidance).font(.subheadline)
                         Text("Fictional source: " + reference.characterName).font(.caption).foregroundStyle(.secondary)
                         Text(reference.transcript).font(.footnote).textSelection(.enabled)
+                        Button("Edit reference notes") { editing = reference }
                         Button("Remove from Haru context", role: .destructive) { deleting = reference }
                     }
                 }
                 if store.references.isEmpty { Text("No saved references yet. Open a character chat and choose Save chat for Haru.").foregroundStyle(.secondary) }
             }.navigationTitle("Haru context")
+            .sheet(item: $editing) { reference in HaruReferenceEditor(store: store, reference: reference) }
             .task { await store.loadReferences(session.client) }
             .toolbar { Button("Done") { dismiss() } }
             .confirmationDialog("Remove this reference?", isPresented: Binding(get: { deleting != nil }, set: { if !$0 { deleting = nil } }), titleVisibility: .visible) {
                 Button("Remove reference", role: .destructive) { if let reference = deleting { Task { await store.removeReference(reference, session.client) } }; deleting = nil }
             }
+        }
+    }
+}
+
+struct HaruReferenceEditor: View {
+    @Environment(Session.self) private var session
+    @Environment(\.dismiss) private var dismiss
+    var store: RoleplayStore
+    let reference: HaruReference
+    @State private var label: String
+    @State private var guidance: String
+    @State private var issue: String?
+    init(store: RoleplayStore, reference: HaruReference) {
+        self.store = store; self.reference = reference
+        _label = State(initialValue: reference.label); _guidance = State(initialValue: reference.guidance)
+    }
+    var body: some View {
+        NavigationStack {
+            Form {
+                Section("Reference name") { TextField("Name", text: $label) }
+                Section("What should Haru learn?") { TextField("Approved personality and conversational notes", text: $guidance, axis: .vertical).lineLimit(4...8) }
+                Section("Quoted dialogue") { Text(reference.transcript).font(.footnote).textSelection(.enabled) }
+                if let issue { Text(issue).foregroundStyle(.orange) }
+            }.navigationTitle("Edit reference")
+            .toolbar {
+                ToolbarItem(placement: .cancellationAction) { Button("Cancel") { dismiss() }.disabled(store.creatorWorking) }
+                ToolbarItem(placement: .confirmationAction) {
+                    Button("Save") { Task { if await store.updateReference(reference, label: label, guidance: guidance, client: session.client) { dismiss() } else { issue = store.problem; store.problem = nil } } }
+                        .disabled(store.creatorWorking || label.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || guidance.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || label.count > 200 || guidance.count > 2000)
+                }
+            }.interactiveDismissDisabled(store.creatorWorking)
         }
     }
 }

@@ -123,6 +123,21 @@ final class RoleplayStore {
             return false
         }
     }
+    func updateReference(_ reference: HaruReference, label: String, guidance: String, client: HaruClient) async -> Bool {
+        guard !creatorWorking else { return false }
+        creatorWorking = true
+        defer { creatorWorking = false }
+        do {
+            let _: HaruReference = try await client.post("/api/roleplay", body("context-update", ["referenceId": .string(reference.id), "referenceRevision": .number(Double(reference.revision)), "label": .string(label), "guidance": .string(guidance)]))
+            await loadReferences(client)
+            return true
+        } catch {
+            await loadReferences(client)
+            if references.contains(where: { $0.id == reference.id && $0.revision == reference.revision + 1 && $0.label == label.trimmingCharacters(in: .whitespacesAndNewlines) && $0.guidance == guidance.trimmingCharacters(in: .whitespacesAndNewlines) }) { return true }
+            problem = error.localizedDescription
+            return false
+        }
+    }
     func removeReference(_ reference: HaruReference, _ client: HaruClient) async {
         do {
             let result: HaruReferences = try await client.post("/api/roleplay", body("context-delete", ["referenceId": .string(reference.id), "referenceRevision": .number(Double(reference.revision))]))
