@@ -601,7 +601,7 @@ private struct CharacterMessageText: View {
     var body: some View { formatted }
     private var formatted: Text {
         let source = content as NSString
-        let pattern = #"(?<![\*])\*(?!\*)([^*]+)\*(?!\*)"#
+        let pattern = #"(?<![\\*])\*(?!\*)([^*]+)\*(?!\*)"#
         guard let regex = try? NSRegularExpression(pattern: pattern) else { return Text(content) }
         var result = Text(""); var offset = 0
         for match in regex.matches(in: content, range: NSRange(location: 0, length: source.length)) {
