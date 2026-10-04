@@ -66,6 +66,12 @@ struct CreatorFields: Codable, Equatable, Sendable {
     var model = "venice-uncensored-1-2"
     var temperature = 0.85
     var maxTokens = 768
+    var normalized: CreatorFields {
+        var result = self
+        result.tags = tags.map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }.filter { !$0.isEmpty }
+        result.systemPrompts = systemPrompts.map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }.filter { !$0.isEmpty }
+        return result
+    }
 }
 struct VeniceModel: Codable, Identifiable, Sendable {
     let id: String

@@ -49,6 +49,7 @@ final class RoleplayStore {
         guard !savingProfile else { return nil }
         savingProfile = true
         defer { savingProfile = false }
+        let creator = creator.normalized
         do {
             let creatorValue = try JSONDecoder().decode(JSONValue.self, from: JSONEncoder().encode(creator))
             let saved: VeniceCharacter = try await client.post("/api/roleplay", body("custom-save", [
