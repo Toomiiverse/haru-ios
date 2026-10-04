@@ -10,6 +10,7 @@ final class RoleplayStore {
     var savingProfile = false
     var models: [VeniceModel] = []
     var references: [HaruReference] = []
+    var savedSessions: [SavedCharacterSession] = []
     var creatorWorking = false
     var problem: String?
     var changing = false
@@ -213,6 +214,56 @@ final class RoleplayStore {
             problem = "Delivery could not be confirmed. Check the existing reply before sending again."
             return false
         }
+    }
+    func regenerate(_ messageId: String, _ client: HaruClient) async -> Bool {
+        guard !waiting, let current = state, current.mode == "character" else { return false }
+        changing = true
+        defer { changing = false }
+        let id = UUID().uuidString
+        unconfirmedId = id
+        do {
+            let receipt: RoleplayReceipt = try await client.post("/api/roleplay", body("regenerate", [
+                "messageId": .string(messageId), "requestId": .string(id), "revision": .number(Double(current.revision)),
+            ]))
+            await load(client)
+            handle(receipt, client)
+            return receipt.status != "missing"
+        } catch {
+            do {
+                let receipt: RoleplayReceipt = try await client.post("/api/roleplay", body("receipt", ["requestId": .string(id)]))
+                handle(receipt, client)
+                await load(client)
+                if receipt.status != "missing" { return true }
+            } catch { startPolling(id, client) }
+            problem = "Delivery could not be confirmed. Check the existing reply before sending again."
+            return false
+        }
+    }
+    func loadSessions(_ client: HaruClient) async {
+        do { let result: SavedCharacterSessions = try await client.post("/api/roleplay", body("session-list")); savedSessions = result.sessions }
+        catch { problem = error.localizedDescription }
+    }
+    func saveSession(id: String, label: String, _ client: HaruClient) async -> Bool {
+        guard !waiting, let current = state else { return false }
+        changing = true
+        defer { changing = false }
+        do {
+            let _: SavedCharacterSession = try await client.post("/api/roleplay", body("session-save", ["savedSessionId": .string(id), "label": .string(label), "revision": .number(Double(current.revision))]))
+            await loadSessions(client)
+            return true
+        } catch {
+            await loadSessions(client)
+            if savedSessions.contains(where: { $0.id.lowercased() == id.lowercased() && $0.label == label.trimmingCharacters(in: .whitespacesAndNewlines) }) { return true }
+            problem = error.localizedDescription
+            return false
+        }
+    }
+    func openSession(_ saved: SavedCharacterSession, _ client: HaruClient) async -> Bool {
+        await change("session-open", ["savedSessionId": .string(saved.id), "savedSessionRevision": .number(Double(saved.revision))], client)
+    }
+    func deleteSession(_ saved: SavedCharacterSession, _ client: HaruClient) async {
+        do { let result: SavedCharacterSessions = try await client.post("/api/roleplay", body("session-delete", ["savedSessionId": .string(saved.id), "savedSessionRevision": .number(Double(saved.revision))])); savedSessions = result.sessions }
+        catch { problem = error.localizedDescription; await loadSessions(client) }
     }
     private func handle(_ receipt: RoleplayReceipt, _ client: HaruClient) {
         if receipt.status == "pending" { startPolling(receipt.requestId, client) }

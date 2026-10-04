@@ -53,6 +53,11 @@ struct CharacterChatView: View {
     @State private var newScene = false
     @State private var saveContext = false
     @State private var refreshing = false
+    @State private var showSessions = false
+    @State private var saveSession = false
+    @State private var sessionLabel = ""
+    @State private var saveSessionId = UUID().uuidString
+    @State private var regenerateMessage: RoleplayMessage?
 
     var body: some View {
         NavigationStack {
@@ -75,12 +80,18 @@ struct CharacterChatView: View {
                                     VStack(alignment: .leading, spacing: 4) {
                                         Text(message.role == "user" ? "You" : store.state?.character?.name ?? "Character")
                                             .font(.caption).foregroundStyle(.secondary)
-                                        Text(message.content).textSelection(.enabled)
+                                        CharacterMessageText(content: message.content).textSelection(.enabled)
                                     }
                                     .padding(12)
                                     .background(message.role == "user" ? Color.accentColor.opacity(0.2) : Color.secondary.opacity(0.12), in: RoundedRectangle(cornerRadius: 16))
                                     if message.role != "user" { Spacer(minLength: 36) }
-                                }.id(message.id)
+                                }
+                                .contextMenu {
+                                    if !message.id.hasPrefix("intro:") {
+                                        Button("Regenerate reply", systemImage: "arrow.clockwise") { regenerateMessage = message }.disabled(store.waiting)
+                                    }
+                                }
+                                .id(message.id)
                             }
                             if store.waiting { HStack { ProgressView(); Text("Waiting for the character…").foregroundStyle(.secondary) } }
                             Color.clear.frame(height: 1).id("end")
@@ -105,6 +116,12 @@ struct CharacterChatView: View {
             .navigationTitle(store.state?.character?.name ?? "Character")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
+                ToolbarItem(placement: .bottomBar) {
+                    Menu("Sessions", systemImage: "folder") {
+                        Button("Save this session") { sessionLabel = store.state?.character?.name ?? "Character chat"; saveSessionId = UUID().uuidString; saveSession = true }.disabled(store.waiting)
+                        Button("Saved sessions") { showSessions = true }
+                    }
+                }
                 ToolbarItem(placement: .bottomBar) { Button("Save chat for Haru") { saveContext = true }.disabled(store.waiting || store.state?.messages.isEmpty != false) }
                 ToolbarItem(placement: .topBarLeading) { Button("My Characters") { chooseCharacter = true }.disabled(store.waiting) }
                 ToolbarItem(placement: .topBarTrailing) {
@@ -114,6 +131,18 @@ struct CharacterChatView: View {
                 }
                 ToolbarItem(placement: .topBarTrailing) { Button("New scene") { newScene = true }.disabled(store.waiting) }
             }
+            .sheet(isPresented: $showSessions) { SavedCharacterSessionLibrary(store: store) }
+            .alert("Save character session", isPresented: $saveSession) {
+                TextField("Session name", text: $sessionLabel)
+                Button("Save") { Task { _ = await store.saveSession(id: saveSessionId, label: sessionLabel, session.client) } }
+                Button("Cancel", role: .cancel) {}
+            } message: { Text("Saves a named copy of this conversation and its character settings. Reopen it through Sessions.") }
+            .confirmationDialog("Regenerate this reply?", isPresented: Binding(get: { regenerateMessage != nil }, set: { if !$0 { regenerateMessage = nil } }), titleVisibility: .visible) {
+                if let message = regenerateMessage {
+                    Button("Regenerate reply") { regenerateMessage = nil; Task { _ = await store.regenerate(message.id, session.client) } }
+                }
+                Button("Cancel", role: .cancel) { regenerateMessage = nil }
+            } message: { Text("Creates a new Venice reply to this prompt. Later messages stay unchanged and may refer to the previous answer. The previous reply remains stored on the server.") }
             .sheet(isPresented: $saveContext) { SaveSceneReference(store: store) }
             .confirmationDialog("Start a new scene?", isPresented: $newScene, titleVisibility: .visible) {
                 Button("New scene") { Task { await store.newScene(session.client) } }
@@ -563,6 +592,60 @@ struct HaruReferenceEditor: View {
                         .disabled(store.creatorWorking || label.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || guidance.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || label.count > 200 || guidance.count > 2000)
                 }
             }.interactiveDismissDisabled(store.creatorWorking)
+        }
+    }
+}
+
+private struct CharacterMessageText: View {
+    let content: String
+    var body: some View { formatted }
+    private var formatted: Text {
+        let source = content as NSString
+        let pattern = #"(?<![\*])\*(?!\*)([^*]+)\*(?!\*)"#
+        guard let regex = try? NSRegularExpression(pattern: pattern) else { return Text(content) }
+        var result = Text(""); var offset = 0
+        for match in regex.matches(in: content, range: NSRange(location: 0, length: source.length)) {
+            result = result + Text(source.substring(with: NSRange(location: offset, length: match.range.location - offset)))
+            result = result + Text(source.substring(with: match.range(at: 1))).italic().foregroundColor(.secondary)
+            offset = NSMaxRange(match.range)
+        }
+        return result + Text(source.substring(from: offset))
+    }
+}
+
+private struct SavedCharacterSessionLibrary: View {
+    @Environment(Session.self) private var session
+    @Environment(\.dismiss) private var dismiss
+    var store: RoleplayStore
+    @State private var opening: SavedCharacterSession?
+    @State private var deleting: SavedCharacterSession?
+    var body: some View {
+        NavigationStack {
+            List {
+                Section { Text("Named conversation snapshots. Opening one creates a continuation copy; save again to keep the continuation.").font(.footnote).foregroundStyle(.secondary) }
+                ForEach(store.savedSessions) { saved in
+                    Button { opening = saved } label: {
+                        VStack(alignment: .leading, spacing: 4) {
+                            Text(saved.label).font(.headline)
+                            Text("\(saved.characterName) · \(saved.messageCount) messages").font(.caption)
+                            Text(saved.model).font(.caption2).foregroundStyle(.secondary)
+                            Text(Date(timeIntervalSince1970: saved.savedAt / 1000), style: .date).font(.caption2)
+                        }
+                    }.disabled(store.waiting)
+                    .swipeActions { Button("Delete", role: .destructive) { deleting = saved } }
+                }
+                if store.savedSessions.isEmpty { Text("No saved character sessions yet.").foregroundStyle(.secondary) }
+            }
+            .navigationTitle("Saved sessions")
+            .toolbar { Button("Done") { dismiss() } }
+            .task { await store.loadSessions(session.client) }
+            .refreshable { await store.loadSessions(session.client) }
+            .confirmationDialog("Open saved session?", isPresented: Binding(get: { opening != nil }, set: { if !$0 { opening = nil } })) {
+                if let saved = opening { Button("Open continuation") { opening = nil; Task { if await store.openSession(saved, session.client) { dismiss() } } } }
+            } message: { Text("Save your current session first if you want to reopen it later. Its history stays on the server.") }
+            .confirmationDialog("Delete saved session?", isPresented: Binding(get: { deleting != nil }, set: { if !$0 { deleting = nil } })) {
+                if let saved = deleting { Button("Delete saved copy", role: .destructive) { deleting = nil; Task { await store.deleteSession(saved, session.client) } } }
+            } message: { Text("This removes the named snapshot. Existing chat history and receipts remain stored.") }
         }
     }
 }

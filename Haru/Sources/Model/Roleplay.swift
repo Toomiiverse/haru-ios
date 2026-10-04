@@ -101,3 +101,14 @@ struct GeneratedCharacter: Codable, Sendable {
     let intro: String?
     let tags: [String]?
 }
+
+struct SavedCharacterSession: Codable, Identifiable, Sendable {
+    let id: String
+    let revision: Int
+    let label: String
+    let characterName: String
+    let model: String
+    let messageCount: Int
+    let savedAt: Double
+}
+struct SavedCharacterSessions: Codable, Sendable { let sessions: [SavedCharacterSession] }
