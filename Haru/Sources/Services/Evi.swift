@@ -66,7 +66,7 @@ final class EviCall: @unchecked Sendable {
     func start() {
         task.resume()
         // What this phone can play: her voice as it is made.
-        task.send(.string("{\"type\":\"hello\",\"pcm\":true,\"reactionActivityTracked\":true}")) { _ in }
+        task.send(.string(DeviceClockContext.callHello())) { _ in }
         receive()
     }
 

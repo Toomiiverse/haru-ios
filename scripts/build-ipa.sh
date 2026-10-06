@@ -6,6 +6,7 @@ set -euo pipefail
 cd "$(dirname "$0")/.."
 
 bash scripts/test-call-playback-gate.sh
+bash scripts/test-device-clock.sh
 
 # The newest Xcode on the box, else whatever is selected. App Store Connect
 # refuses uploads built with anything older than the iOS 26 SDK (Xcode 26),

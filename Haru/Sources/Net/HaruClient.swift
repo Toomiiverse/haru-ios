@@ -72,6 +72,7 @@ struct HaruClient: Sendable {
         var req = URLRequest(url: components.url ?? base)
         req.httpMethod = method
         req.setValue("application/json", forHTTPHeaderField: "Accept")
+        req.setValue(DeviceClockContext.timeZone, forHTTPHeaderField: "X-Haru-Timezone")
         return req
     }
 
