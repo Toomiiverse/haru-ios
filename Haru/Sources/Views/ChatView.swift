@@ -404,7 +404,7 @@ struct ChatView: View {
         case .connecting: return "Calling her…"
         case .listening: return (chat.callManualInput ? "Microphone sent only while held" : "Start each request with Haru") + echo
         case .thinking: return "Thinking…"
-        case .speaking: return chat.callFiller.map { "“\($0)” — looking that up" } ?? (chat.callManualInput ? "Speaking… hold to interrupt" : "Speaking… say Haru to cut in")
+        case .speaking: return chat.callFiller.map { "“\($0)”" } ?? (chat.callManualInput ? "Speaking… hold to interrupt" : "Speaking… say Haru to cut in")
         case .off: break
         }
         switch chat.talkState {

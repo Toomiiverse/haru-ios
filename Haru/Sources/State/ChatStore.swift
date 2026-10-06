@@ -126,6 +126,7 @@ final class ChatStore {
     /// Her reply on the call, as it arrives a sentence at a time, and its bubble.
     private var callReply = ""
     private var callReplyID: String?
+    private var callAudioIsReaction = false
     private var wake: NameSpotter?
     /// Which ears are listening for her name, for the More screen.
     private(set) var wakeEngine = ""
@@ -155,6 +156,10 @@ final class ChatStore {
             guard let self else { return }
             // She has gone quiet: the server's ear can stop discounting her echo.
             self.call?.her(speaking: false)
+            if self.call != nil && self.callAudioIsReaction {
+                self.callFiller = nil
+                if self.callState == .speaking { self.callState = .listening }
+            }
             self.drain()
         }
         audio.onVoiceStart = { [weak self] in
@@ -698,7 +703,17 @@ final class ChatStore {
     }
 
     func tapToHush() -> Bool {
-        guard audio.speaking || draining else { return false }
+        guard audio.speaking || draining || (call != nil && callState == .speaking) else { return false }
+        if let call {
+            call.interrupt()
+            hush()
+            callFiller = nil
+            callAudioIsReaction = false
+            callState = .listening
+            lastCallActivity = Date()
+            call.her(speaking: false)
+            return true
+        }
         hush()
         cutOff = true
         return true
@@ -736,8 +751,11 @@ final class ChatStore {
         callState = .connecting
         callReply = ""
         callReplyID = nil
-        let call = EviCall(client: client) { [weak self] event in
-            Task { @MainActor in self?.handleCall(event) }
+        let call = EviCall(client: client) { [weak self] event, token in
+            Task { @MainActor in
+                guard let self, self.call?.accepts(token) == true else { return }
+                self.handleCall(event)
+            }
         }
         self.call = call
         audio.stream(true)
@@ -778,6 +796,7 @@ final class ChatStore {
         callInputHeld = false
         callModePending = false
         callFiller = nil
+        callAudioIsReaction = false
         callReply = ""
         callReplyID = nil
     }
@@ -785,8 +804,15 @@ final class ChatStore {
     private func handleCall(_ event: EviCall.Event) {
         guard call != nil else { return }
         switch event {
-        case .heard, .said, .filler, .voiceStart, .pcm, .interrupted:
+        case .heard, .said, .interrupted:
             lastCallActivity = Date()
+        case .voiceStart(_, _, _, let filler):
+            callAudioIsReaction = filler
+            if !filler { lastCallActivity = Date() }
+        case .pcm:
+            if !callAudioIsReaction { lastCallActivity = Date() }
+        case .filler:
+            callAudioIsReaction = true
         default:
             break
         }
@@ -815,6 +841,7 @@ final class ChatStore {
             callFiller = text
             callState = .speaking
         case .said(let text, _):
+            callAudioIsReaction = false
             guard !text.isEmpty else { return }
             callFiller = nil
             if let id = callReplyID, let i = entries.firstIndex(where: { $0.id == id }) {
@@ -829,7 +856,7 @@ final class ChatStore {
             callState = .speaking
         case .voice(let wav):
             play(wav)
-        case .voiceStart(let id, let sampleRate, let turn):
+        case .voiceStart(let id, let sampleRate, let turn, _):
             // Streamed: whatever whole lines were queued are hers no longer.
             cancelLines()
             audio.beginStream(sampleRate: sampleRate, timingTurn:turn, timingID:id)
@@ -997,7 +1024,7 @@ final class ChatStore {
     private static let standbyCallIdle: TimeInterval = 45
     private func hangUpIfIdle() {
         guard callFromStandby, call != nil else { return }
-        if audio.speaking || draining || callState == .thinking || callState == .speaking || callState == .connecting {
+        if (!callAudioIsReaction && (audio.speaking || draining || callState == .speaking)) || callState == .thinking || callState == .connecting {
             lastCallActivity = Date()
             return
         }

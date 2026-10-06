@@ -25,7 +25,7 @@ final class EviCall: @unchecked Sendable {
         /// Her voice for one sentence, whole, as WAV bytes.
         case voice(Data)
         /// Her voice is about to stream as raw PCM at this rate.
-        case voiceStart(id: String, sampleRate: Double, turn: Int?)
+        case voiceStart(id: String, sampleRate: Double, turn: Int?, filler: Bool)
         /// A stretch of that voice.
         case pcm(Data)
         case voiceEnd(id: String)
@@ -37,16 +37,18 @@ final class EviCall: @unchecked Sendable {
     }
 
     private let task: URLSessionWebSocketTask
-    private let onEvent: @Sendable (Event) -> Void
+    private let onEvent: @Sendable (Event, CallPlaybackGate.Token) -> Void
     private let lock = NSLock()
     private var closed = false
+    private var playbackGate = CallPlaybackGate()
+    private var interruptSupported = false
     private var inputGate = CallInputGate()
     private var inputSamples = 0
     private var captureFrames: [(start:Int, end:Int, at:Double)] = []
     private var turnCapture: [Int:Double] = [:]
     private var measuredTurns: Set<Int> = []
 
-    init(client: HaruClient, onEvent: @escaping @Sendable (Event) -> Void) {
+    init(client: HaruClient, onEvent: @escaping @Sendable (Event, CallPlaybackGate.Token) -> Void) {
         var parts = URLComponents(url: client.base.appendingPathComponent("/api/call/session"), resolvingAgainstBaseURL: false) ?? URLComponents()
         parts.scheme = parts.scheme == "http" ? "ws" : "wss"
         var request = URLRequest(url: parts.url ?? client.base)
@@ -64,8 +66,39 @@ final class EviCall: @unchecked Sendable {
     func start() {
         task.resume()
         // What this phone can play: her voice as it is made.
-        task.send(.string("{\"type\":\"hello\",\"pcm\":true}")) { _ in }
+        task.send(.string("{\"type\":\"hello\",\"pcm\":true,\"reactionActivityTracked\":true}")) { _ in }
         receive()
+    }
+
+    /// Stop this call's outgoing speech, keeping its microphone/socket open.
+    func interrupt() {
+        let requestID = UUID().uuidString.lowercased()
+        lock.lock()
+        guard !closed else { lock.unlock(); return }
+        let supported = interruptSupported
+        playbackGate.interrupt(requestID: requestID, supported: supported)
+        lock.unlock()
+        if supported { task.send(.string("{\"type\":\"interrupt\",\"requestId\":\"\(requestID)\"}")) { _ in } }
+    }
+    func accepts(_ token: CallPlaybackGate.Token) -> Bool {
+        lock.lock(); defer { lock.unlock() }
+        return playbackGate.accepts(token)
+    }
+    private func emit(_ event: Event) {
+        lock.lock()
+        let media: Bool
+        switch event {
+        case .said, .filler, .voice, .voiceStart, .pcm, .voiceEnd, .turnEnded: media = true
+        default: media = false
+        }
+        if media && (closed || playbackGate.audioBlocked) { lock.unlock(); return }
+        let token = playbackGate.token
+        lock.unlock()
+        onEvent(event, token)
+    }
+    private var audioAllowed: Bool {
+        lock.lock(); defer { lock.unlock() }
+        return !closed && !playbackGate.audioBlocked
     }
 
     /// Whether she is audible through this phone's speaker right now, so the
@@ -124,6 +157,7 @@ final class EviCall: @unchecked Sendable {
         lock.lock()
         let was = closed
         closed = true
+        playbackGate.close()
         lock.unlock()
         guard !was else { return }
         let task = self.task
@@ -141,7 +175,7 @@ final class EviCall: @unchecked Sendable {
             case .success(let message):
                 switch message {
                 case .string(let text): self.handle(text)
-                case .data(let data): self.onEvent(.pcm(data))
+                case .data(let data): if self.audioAllowed { self.emit(.pcm(data)) }
                 @unknown default: break
                 }
                 self.receive()
@@ -152,18 +186,22 @@ final class EviCall: @unchecked Sendable {
     private func handle(_ text: String) {
         guard let data = text.data(using: .utf8),
               let event = try? JSONDecoder().decode(CallEvent.self, from: data) else { return }
+        if ["assistant_message", "filler", "audio_output", "audio_start", "audio_end", "assistant_end"].contains(event.type), !audioAllowed { return }
         switch event.type {
-        case "ready": onEvent(.ready(pushToTalk: event.pushToTalk == true))
+        case "ready":
+            lock.lock(); interruptSupported = event.tapToInterrupt ?? false; lock.unlock()
+            emit(.ready(pushToTalk: event.pushToTalk == true))
         case "input_mode":
             guard let enabled = event.manual else { return }
             lock.lock(); inputGate.acknowledge(enabled); lock.unlock()
-            onEvent(.inputMode(manual: enabled))
+            emit(.inputMode(manual: enabled))
         case "input_gate":
             guard let active = event.active else { return }
             lock.lock(); inputGate.serverGate(active); lock.unlock()
-            onEvent(.inputGate(active: active))
-        case "refused": onEvent(.refused(event.reason ?? "The call could not be placed."))
+            emit(.inputGate(active: active))
+        case "refused": emit(.refused(event.reason ?? "The call could not be placed."))
         case "user_message":
+            lock.lock(); playbackGate.newUserTurn(); lock.unlock()
             if let turn = event.turn, let end = event.speechEndSample {
                 lock.lock()
                 if let frame = captureFrames.last(where: { $0.start < end && $0.end >= end }) {
@@ -172,16 +210,18 @@ final class EviCall: @unchecked Sendable {
                 }
                 lock.unlock()
             }
-            onEvent(.heard(event.text ?? "", interim: event.interim ?? false))
-        case "assistant_message": onEvent(.said(event.text ?? "", id: event.id ?? ""))
+            emit(.heard(event.text ?? "", interim: event.interim ?? false))
+        case "assistant_message": emit(.said(event.text ?? "", id: event.id ?? ""))
         case "audio_output":
-            if let encoded = event.data, let wav = Data(base64Encoded: encoded) { onEvent(.voice(wav)) }
-        case "audio_start": onEvent(.voiceStart(id: event.id ?? "", sampleRate: event.sampleRate ?? 24_000, turn:event.filler == false ? event.turn : nil))
-        case "audio_end": onEvent(.voiceEnd(id: event.id ?? ""))
-        case "filler": onEvent(.filler(event.text ?? ""))
-        case "assistant_end": onEvent(.turnEnded(emotion: event.emotion))
-        case "user_interruption": onEvent(.interrupted)
-        case "error": onEvent(.failed(event.message ?? "Something went wrong on the call."))
+            if let encoded = event.data, let wav = Data(base64Encoded: encoded) { emit(.voice(wav)) }
+        case "audio_start": emit(.voiceStart(id: event.id ?? "", sampleRate: event.sampleRate ?? 24_000, turn:event.filler == false ? event.turn : nil, filler:event.filler ?? false))
+        case "audio_end": emit(.voiceEnd(id: event.id ?? ""))
+        case "filler": emit(.filler(event.text ?? ""))
+        case "assistant_end": emit(.turnEnded(emotion: event.emotion))
+        case "user_interruption":
+            lock.lock(); let accepted = playbackGate.acknowledge(event.requestId); lock.unlock()
+            if accepted { emit(.interrupted) }
+        case "error": emit(.failed(event.message ?? "Something went wrong on the call."))
         case "ended": finish(event.reason ?? "The call ended.")
         default: break
         }
@@ -191,9 +231,10 @@ final class EviCall: @unchecked Sendable {
         lock.lock()
         let was = closed
         closed = true
+        playbackGate.close()
         lock.unlock()
         guard !was else { return }
-        onEvent(.ended(reason))
+        emit(.ended(reason))
     }
 }
 
@@ -201,6 +242,8 @@ final class EviCall: @unchecked Sendable {
 /// events and not others.
 private struct CallEvent: Decodable {
     let type: String
+    let requestId: String?
+    let tapToInterrupt: Bool?
     let reason: String?
     let text: String?
     let interim: Bool?

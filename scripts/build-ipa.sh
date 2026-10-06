@@ -5,6 +5,8 @@
 set -euo pipefail
 cd "$(dirname "$0")/.."
 
+bash scripts/test-call-playback-gate.sh
+
 # The newest Xcode on the box, else whatever is selected. App Store Connect
 # refuses uploads built with anything older than the iOS 26 SDK (Xcode 26),
 # and the macos-15 image's default is still 16.4. (Pinning 16.2 once failed in
