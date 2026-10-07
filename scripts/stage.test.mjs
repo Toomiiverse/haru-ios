@@ -23,6 +23,7 @@ test('native keyboard peek stays readable, tracks typing and restores the latest
   const swift=fs.readFileSync('Haru/Sources/Views/ChatView.swift','utf8');
   assert.match(swift,/scale: 1, peek: compact/);assert.ok(!swift.includes('scale: compact ? 0.5'));
   assert.match(swift,/\.contentShape\(Rectangle\(\)\)[\s\S]*\.onTapGesture\s*\{[\s\S]*chat\.stage\.tap\(\)/);
+  assert.match(swift,/let hushed = chat\.tapToHush\(\)[\s\S]*chat\.stage\.tap\(\)[\s\S]*if hushed \{ return \}/);
   const stage=fs.readFileSync('Haru/Sources/Services/Stage.swift','utf8');
   assert.match(stage,/web\.isUserInteractionEnabled = false/);
 });

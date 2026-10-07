@@ -193,8 +193,9 @@ struct ChatView: View {
             .contentShape(Rectangle())
             // Tapped mid-line, she stops talking; quiet, the tap sizes her stage as before.
             .onTapGesture {
-                if chat.tapToHush() { return }
+                let hushed = chat.tapToHush()
                 chat.stage.tap()
+                if hushed { return }
                 withAnimation(.easeInOut(duration: 0.25)) { stageTall.toggle() }
             }
             .onLongPressGesture { chat.stage.reload() }
