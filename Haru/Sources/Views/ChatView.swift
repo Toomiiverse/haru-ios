@@ -33,8 +33,7 @@ struct ChatView: View {
     @State private var feedback: ChatFeedback?
     @State private var photo: PhotosPickerItem?
     @State private var stageTall = true
-    /// Typing: the stage is a strip under the title, her small and whole in
-    /// it, the plate gone, and the talk has the room.
+    /// Typing: she peeks over the transcript while the plate makes room.
     @State private var compact = false
     /// The status bar and title, which the stage now runs up behind.
     @State private var topInset: CGFloat = 0
@@ -107,8 +106,7 @@ struct ChatView: View {
             nav.wantsCall = false
             if chat.call == nil { Task { await chat.holdMic() } }
         }
-        // Typing: she shrinks up out of the way to make room for the talk;
-        // done, she is back at full size.
+        // Typing: she leans over the transcript; leaving the keyboard restores roaming.
         // Picking a line to answer is the start of typing the answer.
         .onChange(of: chat.replyingTo?.id) { _, id in
             if id != nil { typing = true }
@@ -196,6 +194,7 @@ struct ChatView: View {
             // Tapped mid-line, she stops talking; quiet, the tap sizes her stage as before.
             .onTapGesture {
                 if chat.tapToHush() { return }
+                chat.stage.tap()
                 withAnimation(.easeInOut(duration: 0.25)) { stageTall.toggle() }
             }
             .onLongPressGesture { chat.stage.reload() }
@@ -211,7 +210,7 @@ struct ChatView: View {
     }
 
     /// The part of the stage below the title.
-    private var visibleStageHeight: CGFloat { compact ? 84 : stageTall ? 260 : 130 }
+    private var visibleStageHeight: CGFloat { compact ? 112 : stageTall ? 260 : 130 }
 
     /// The page centres her in the whole stage, part of which is under the
     /// title; the lift moves her down by a little over half the covered inset
@@ -232,8 +231,8 @@ struct ChatView: View {
     private func frameStage() {
         let total = visibleStageHeight + topInset
         let under = total > 0 ? (topInset * 0.55) / total : 0
-        // Compact: half her size, so the whole of her fits the strip.
-        chat.stage.frame(zoom: stageZoom, lift: stageLift - under, scale: compact ? 0.5 : 1)
+        // Compact: her head peeks over the transcript at a readable size.
+        chat.stage.frame(zoom: stageZoom, lift: stageLift - under, scale: 1, peek: compact)
     }
 
     // MARK: Header

@@ -17,7 +17,7 @@ if compgen -G "/Applications/Xcode_*.app" >/dev/null; then
   sudo xcode-select -s "$newest"
 fi
 xcodebuild -version
-node --test scripts/verify-testflight.test.mjs
+node --test scripts/verify-testflight.test.mjs scripts/stage.test.mjs
 bash scripts/test-voice-transport.sh
 bash scripts/test-chat-delivery.sh
 bash scripts/test-roleplay.sh
