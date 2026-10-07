@@ -40,6 +40,9 @@ final class Stage: NSObject, WKNavigationDelegate {
         web.scrollView.isScrollEnabled = false
         web.scrollView.bounces = false
         web.scrollView.contentInsetAdjustmentBehavior = .never
+        // SwiftUI owns the stage tap and long-press gestures. The stage page is
+        // display-only; letting WKWebView hit-test swallows those gestures.
+        web.isUserInteractionEnabled = false
         web.isInspectable = true
         web.navigationDelegate = self
         self.web = web

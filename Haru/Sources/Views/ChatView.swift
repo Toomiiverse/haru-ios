@@ -190,6 +190,7 @@ struct ChatView: View {
                     EmptyView()
                 }
             }
+            .contentShape(Rectangle())
             // Tapped mid-line, she stops talking; quiet, the tap sizes her stage as before.
             .onTapGesture {
                 if chat.tapToHush() { return }
