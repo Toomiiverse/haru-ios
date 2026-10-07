@@ -22,6 +22,9 @@ test('native keyboard peek stays readable, tracks typing and restores the latest
   assert.match(html,/#scene\.peek #stage\s*\{[^}]*height:280px/);
   const swift=fs.readFileSync('Haru/Sources/Views/ChatView.swift','utf8');
   assert.match(swift,/scale: 1, peek: compact/);assert.ok(!swift.includes('scale: compact ? 0.5'));
+  assert.match(swift,/\.contentShape\(Rectangle\(\)\)[\s\S]*\.onTapGesture\s*\{[\s\S]*chat\.stage\.tap\(\)/);
+  const stage=fs.readFileSync('Haru/Sources/Services/Stage.swift','utf8');
+  assert.match(stage,/web\.isUserInteractionEnabled = false/);
 });
 test('the bundled stage uses shared hair, sleep, speech and depth rendering',()=>{
   for(const marker of ['avatar-sleep-layer','avatar-depth','haruNative'])assert.ok(html.includes(marker),marker);
