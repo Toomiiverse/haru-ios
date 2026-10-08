@@ -97,6 +97,14 @@ import CryptoKit
             check(LocalHandoff.decision(prefix) == (split == LocalHandoff.marker.count ? .server : .hold), "handoff marker buffers across stream boundaries")
         }
         check(LocalHandoff.decision("I saw [[HARU_SERVER]] in a story") == .local, "quoted handoff cannot redirect")
+        for question in ["Debug this Python RuntimeError", "Plan a two-week trip with hotel prices",
+                         "Set a reminder tomorrow", "What is the weather now?", "Research the latest iPhone"] {
+            check(LocalHandoff.requiresServer(question), "explicit harder task takes server route")
+        }
+        for question in ["Hey Haru, how are you?", "I had a draining day", "Give me a playful vampire greeting"] {
+            check(!LocalHandoff.requiresServer(question), "ordinary conversation starts locally")
+        }
+        check(LocalHandoff.requiresServer("What is this?", attachments: true), "attachments cannot reach text-only local model")
         var sentPrompt = ""
         store.serverReply = { text in
             sentPrompt = text

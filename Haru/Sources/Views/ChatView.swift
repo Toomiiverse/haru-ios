@@ -73,7 +73,7 @@ struct ChatView: View {
                         Label(local.selected ? local.model.shortName + (local.automaticHandoff ? " → Server" : " · iPhone") : "Haru · Server",
                               systemImage: local.selected ? "iphone" : "network")
                             .font(.caption)
-                    }.accessibilityHint("Open conversation settings")
+                    }.accessibilityHint("Open conversation settings").accessibilityIdentifier("conversation.settings")
                 }
                 ToolbarItem(placement: .topBarTrailing) {
                     Button { showStatus = true } label: {
@@ -574,7 +574,7 @@ struct ChatView: View {
         let sent: Bool
         if local.selected {
             _ = chat.tapToHush()
-            let server = !chat.staged.isEmpty || (local.automaticHandoff && text.count > 3000)
+            let server = local.automaticHandoff && LocalHandoff.requiresServer(text, attachments: !chat.staged.isEmpty)
             sent = local.send(text.isEmpty && server ? "Please help with the attached file." : text, viaServer: server)
         } else { sent = await chat.send(text) }
         if !sent { lastSent = nil; draft = text }

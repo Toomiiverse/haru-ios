@@ -208,6 +208,19 @@ enum LocalHandoff {
         if text.hasPrefix(marker) { return .server }
         return marker.hasPrefix(text) ? .hold : .local
     }
+    /// Capability shortcuts avoid asking the small conversation model to attempt
+    /// requests explicitly naming work it cannot reliably perform on the phone.
+    static func requiresServer(_ question: String, attachments: Bool = false) -> Bool {
+        if attachments || question.count > 3000 { return true }
+        let patterns = [
+            #"(?i)\b(debug|refactor|implement|compile|traceback|runtimeerror|stack trace|unit tests?|write (?:a |the |some )?(?:code|script|program))\b"#,
+            #"(?i)\b(research|look up|search (?:the )?(?:web|internet)|latest news|current (?:prices?|news|weather)|weather|forecast)\b"#,
+            #"(?i)\b(set|create|add|schedule|send|delete|cancel)\b.{0,60}\b(reminder|alarm|calendar|event|email|message|appointment)\b"#,
+            #"(?i)\b(plan|compare|calculate|analyse|analyze|solve|prove)\b.{0,140}\b(budget|prices?|costs?|itinerary|trip|equation|integral|derivative|database|algorithm|statistics)\b"#
+        ]
+        return patterns.contains { question.range(of: $0, options: .regularExpression) != nil }
+    }
+
     static func serverPrompt(question: String, history: [LocalMessage]) -> String {
         let recent = history.filter { $0.state == .complete }.suffix(6).map {
             ["role": $0.role.rawValue, "text": String($0.text.prefix(1500))]

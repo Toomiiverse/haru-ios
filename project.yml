@@ -236,7 +236,26 @@ targets:
         GENERATE_INFOPLIST_FILE: "NO"
         SKIP_INSTALL: "YES"
         SUPPORTS_MACCATALYST: "NO"
+  HaruUITests:
+    type: bundle.ui-testing
+    platform: iOS
+    sources: [HaruUITests]
+    dependencies:
+      - target: Haru
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.toomiiverse.haru.uitests
+        GENERATE_INFOPLIST_FILE: YES
+        TEST_TARGET_NAME: Haru
 schemes:
+  HaruUITests:
+    build:
+      targets:
+        Haru: all
+        HaruUITests: [test]
+    test:
+      config: Debug
+      targets: [HaruUITests]
   Haru:
     build:
       targets:

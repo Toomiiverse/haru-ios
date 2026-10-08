@@ -74,6 +74,10 @@ cp "Vendor/$SPK_MODEL" Haru/Resources/kws/
 
 xcodegen generate
 
+if git log -1 --format=%B | grep -qx 'Haru-UI-Smoke: true'; then
+  bash scripts/test-local-ui.sh
+fi
+
 # Signed, and straight to TestFlight, when the App Store Connect key is in the
 # environment (the workflow passes the repository secrets ASC_KEY_ID,
 # ASC_ISSUER_ID, ASC_KEY_P8 and APPLE_TEAM_ID). Xcode's cloud signing makes

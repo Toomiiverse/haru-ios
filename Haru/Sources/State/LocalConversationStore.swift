@@ -6,9 +6,7 @@ final class LocalConversationStore {
     var selected: Bool {
         didSet { UserDefaults.standard.set(selected, forKey: "haru.local.selected") }
     }
-    var automaticHandoff: Bool {
-        didSet { UserDefaults.standard.set(automaticHandoff, forKey: "haru.local.handoff") }
-    }
+    let automaticHandoff = true
     /// Transport supplied by the existing server chat adapter; never a second server policy.
     var serverReply: ((String) -> AsyncThrowingStream<String, Error>)?
     private(set) var archive = LocalConversationArchive()
@@ -39,7 +37,6 @@ final class LocalConversationStore {
     init() {
         let wasSelected = UserDefaults.standard.bool(forKey: "haru.local.selected")
         selected = wasSelected
-        automaticHandoff = UserDefaults.standard.object(forKey: "haru.local.handoff") as? Bool ?? true
         let stored = UserDefaults.standard.string(forKey: "haru.local.model").flatMap(LocalModel.init(rawValue:))
         download = DolphinDownload(model: stored ?? (wasSelected && LocalFiles(.dolphin).isReady() ? .dolphin : .umbral))
         do {
@@ -95,7 +92,7 @@ final class LocalConversationStore {
         let response = LocalMessage(role: .assistant, text: "", state: .generating)
         archive.messages.append(response)
         do { try save() } catch { archive = previous; problem = error.localizedDescription; return false }
-        run(request, responseID: response.id, viaServer: viaServer)
+        run(request, responseID: response.id, viaServer: viaServer || (automaticHandoff && LocalHandoff.requiresServer(text)))
         return true
     }
 
@@ -109,7 +106,7 @@ final class LocalConversationStore {
         let response = LocalMessage(role: .assistant, text: "", state: .generating)
         archive.messages.append(response)
         do { try save() } catch { archive = previous; problem = error.localizedDescription; return }
-        run(request, responseID: response.id)
+        run(request, responseID: response.id, viaServer: request.messages.last.map { LocalHandoff.requiresServer($0.text) } ?? false)
     }
 
     private func run(_ request: LocalConversationArchive, responseID: String, viaServer: Bool = false) {
@@ -178,7 +175,7 @@ final class LocalConversationStore {
                 }
                 if let i = archive.messages.firstIndex(where: { $0.id == responseID }), archive.messages[i].text.isEmpty {
                     archive.messages[i].state = .failed
-                    problem = "No reply was returned. You can retry or ask the server."
+                    problem = "No reply was returned. You can retry."
                 }
             } catch {
                 cancel.cancel()

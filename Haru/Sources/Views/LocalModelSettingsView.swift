@@ -31,10 +31,8 @@ struct LocalModelSettingsView: View {
                         if local.problem == nil { local.selected = true }
                     }.disabled(switchingDisabled || !download.ready)
                 }
-                Toggle("Hand harder tasks to server", isOn: Binding(get: { local.automaticHandoff }, set: { local.automaticHandoff = $0 }))
-                    .disabled(switchingDisabled)
             } header: { Text("Haru’s conversation") }
-                footer: { Text("Use the same Chat screen and avatar. Switching to this iPhone copies the complete text exchanges currently on screen. Everyday replies run locally. Umbral can hand research, tools and harder reasoning to the server. A handoff sends your request and up to six recent messages; saved notes stay on the phone. Handoffs use server history and memory. Calls and read-aloud also use the server.") }
+                footer: { Text("Use the same Chat screen and avatar. Switching to this iPhone copies the complete text exchanges currently on screen. Everyday replies run locally. Every turn routes automatically: quick conversation stays on the phone; research, iPhone tools and harder reasoning go through Haru’s server. A handoff sends your request and up to six recent messages; saved notes stay on the phone. Handoffs use server history and memory. Calls and read-aloud also use the server.") }
             Section {
                 Picker("Local model", selection: Binding(get: { local.model }, set: { model in
                     Task { await local.chooseModel(model) }
@@ -220,12 +218,6 @@ struct LocalMessageRow: View {
                         if message.id == local.archive.messages.last?.id {
                             Button("Retry", systemImage: "arrow.clockwise") { local.retry() }
                                 .disabled(local.unavailable || !local.download.ready || chat.call != nil || chat.micOn)
-                        }
-                        if message.id == local.archive.messages.last?.id, message.source != "Haru server",
-                           let user = local.archive.messages.dropLast().last, user.role == .user {
-                            Button("Ask server", systemImage: "network") {
-                                _ = local.send(user.text, viaServer: true)
-                            }.disabled(local.unavailable || chat.busy || chat.call != nil || chat.micOn || session.signedIn != true)
                         }
                         if !message.text.isEmpty && session.signedIn == true {
                             Button("Read via server", systemImage: "speaker.wave.2") {
