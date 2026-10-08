@@ -79,7 +79,7 @@ import WeatherKit
                     while !Task.isCancelled,self.generation==epoch {
                         let message=try await ws.receive();guard case .string(let raw)=message,raw.utf8.count<=262144,let data=raw.data(using:.utf8),let frame=try JSONSerialization.jsonObject(with:data) as? [String:Any] else{throw Failure("ios_invalid_frame")}
                         switch frame["type"] as? String {
-                        case "ready":if let now=frame["nowMs"] as? Double{self.serverClock=(now,ProcessInfo.processInfo.systemUptime)};self.connected=true;for (key,receipt) in self.receipts { if receipt["type"] as? String=="result",receipt["acknowledged"] as? Bool != true,receipt["server"] as? String == Session.savedClient().base.absoluteString {try await self.send(receipt)} else if !self.executing.contains(key),let op=receipt["operationId"] as? String {try await self.send(["type":"result","commandId":key,"operationId":op,"data":["ok":false,"unknown":true,"status":"unknown"]])}}
+                        case "ready":if let now=frame["nowMs"] as? Double{self.serverClock=(now,ProcessInfo.processInfo.systemUptime)};self.connected=true;for (key,receipt) in self.receipts { if receipt["type"] as? String=="result",receipt["acknowledged"] as? Bool != true,receipt["server"] as? String == Session.savedClient().base.absoluteString {try await self.send(receipt)} else if receipt["type"] as? String=="started",receipt["server"] as? String == Session.savedClient().base.absoluteString,!self.executing.contains(key),let op=receipt["operationId"] as? String {try await self.send(["type":"result","commandId":key,"operationId":op,"data":["ok":false,"unknown":true,"status":"unknown"]])}}
                         case "command":Task {await self.execute(frame)}
                         case "grant":if let id=frame["commandId"] as? String,let wait=self.grants.removeValue(forKey:id){wait.resume()}
                         case "receipt_ack":if let id=frame["commandId"] as? String,var old=self.receipts[id]{old["acknowledged"]=true;try? self.retain(id,old);if frame["mirrorConfirmed"] as? Bool==true,let data=old["data"] as? [String:Any],let item=data["itemId"] as? String,data["listName"] as? String=="Haru"{Reminders.shared.acknowledgeBridge(item,serverId:frame["canonicalAgendaId"] as? String)}}
@@ -222,7 +222,7 @@ import WeatherKit
             let day=try (args["day"] as? String).map(date) ?? Date(),start=Calendar.current.startOfDay(for:day),end=Calendar.current.date(byAdding:.day,value:1,to:start)!
             let metric=args["metric"] as? String ?? "summary"
             var data:[String:Any]=["ok":true,"day":{let formatter=DateFormatter();formatter.dateFormat="yyyy-MM-dd";formatter.timeZone = .current;return formatter.string(from:start)}(),"steps":NSNull(),"sleepMinutes":NSNull()]
-            if metric != "sleep"{let samples=try await healthSamples(HKQuantityType(.stepCount),from:start,to:min(end,Date()));if !samples.isEmpty{data["steps"]=samples.compactMap{$0 as? HKQuantitySample}.reduce(0.0){$0+$1.quantity.doubleValue(for:.count())}}}
+            if metric != "sleep",let steps=try await stepCount(from:start,to:min(end,Date())){data["steps"]=steps}
             if metric != "steps"{let samples=try await healthSamples(HKCategoryType(.sleepAnalysis),from:start.addingTimeInterval(-6*3600),to:min(start.addingTimeInterval(12*3600),Date()));let intervals=samples.compactMap{$0 as? HKCategorySample}.filter{[HKCategoryValueSleepAnalysis.asleepUnspecified.rawValue,HKCategoryValueSleepAnalysis.asleepCore.rawValue,HKCategoryValueSleepAnalysis.asleepDeep.rawValue,HKCategoryValueSleepAnalysis.asleepREM.rawValue].contains($0.value)}.map{($0.startDate,$0.endDate)}.sorted{$0.0<$1.0};if !intervals.isEmpty{var total=0.0,last=Date.distantPast;for interval in intervals{total+=max(0,interval.1.timeIntervalSince(max(last,interval.0)));last=max(last,interval.1)};data["sleepMinutes"]=Int(total/60)}}
             return data
         case "ios_location":
@@ -249,6 +249,16 @@ import WeatherKit
             let accepted=await UIApplication.shared.open(url)
             return ["ok":accepted,"handoffAccepted":accepted,"app":app]
         default:throw Failure("ios_unknown_tool")
+        }
+    }
+    private func stepCount(from:Date,to:Date) async throws -> Double? {
+        guard to>from else{return nil}
+        return try await withCheckedThrowingContinuation{continuation in
+            let predicate=HKQuery.predicateForSamples(withStart:from,end:to)
+            let query=HKStatisticsQuery(quantityType:HKQuantityType(.stepCount),quantitySamplePredicate:predicate,options:.cumulativeSum){_,statistics,error in
+                if let error{continuation.resume(throwing:error)}else{continuation.resume(returning:statistics?.sumQuantity()?.doubleValue(for:.count()))}
+            }
+            health.execute(query)
         }
     }
     private func healthSamples(_ type:HKSampleType,from:Date,to:Date) async throws->[HKSample]{
