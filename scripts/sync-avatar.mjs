@@ -96,6 +96,8 @@ body { background:transparent !important; }
 @media(prefers-reduced-motion:reduce){#her{transition:none;}}
 /* Quiet background sparks stay separate from her responsive light. */
 #field { position:absolute; inset:0 0 auto; height:var(--panel-height,0px); overflow:hidden; pointer-events:none; --lift:1; }
+/* Fade only the scenery; Haru remains in front when she leans across the seam. */
+#backdrop, #field { -webkit-mask-image:linear-gradient(to bottom,#000 calc(100% - 32px),transparent); mask-image:linear-gradient(to bottom,#000 calc(100% - 32px),transparent); }
 #field i { position:absolute; display:block; border-radius:50%; }
 #field .spark { left:var(--x); top:var(--y); width:var(--s); height:var(--s); background:oklch(94% 0.06 var(--hue)); box-shadow:0 0 6px 1px oklch(86% 0.12 var(--hue) / 0.7); opacity:0; animation:twinkle var(--d) ease-in-out infinite; animation-delay:var(--t); }
 @keyframes twinkle { 0% { opacity:0; transform:translateY(0) scale(.6); } 35% { opacity:calc(var(--o) * var(--lift)); transform:translateY(calc(var(--r) * -.4)) scale(1); } 70% { opacity:calc(var(--o) * .7 * var(--lift)); } 100% { opacity:0; transform:translateY(calc(var(--r) * -1)) scale(.5); } }

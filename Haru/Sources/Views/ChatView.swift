@@ -115,7 +115,7 @@ struct ChatView: View {
             nav.wantsCall = false
             if chat.call == nil { Task { await chat.holdMic() } }
         }
-        // Her background stays above the transcript; only Haru approaches the composer.
+        // She leans over her panel's edge toward typing without leaving her home.
         // Picking a line to answer is the start of typing the answer.
         .onChange(of: chat.replyingTo?.id) { _, id in
             if id != nil { typing = true }
@@ -177,17 +177,6 @@ struct ChatView: View {
                     .offset(y: compact ? avatarTop + (avatarHeight - 190) / 2 : 0)
                     .allowsHitTesting(stageIsAlive)
             }
-            // Her ground dissolves into the talk rather than stopping at a line.
-            .overlay(alignment: .top) {
-                LinearGradient(stops: [
-                    .init(color: .clear, location: 0),
-                    .init(color: Color("LaunchBackground").opacity(0.6), location: 0.65),
-                    .init(color: Color("LaunchBackground"), location: 1),
-                ], startPoint: .top, endPoint: .bottom)
-                .frame(height: 32)
-                .offset(y: panelHeight - 32)
-                .allowsHitTesting(false)
-            }
             .overlay(alignment: .top) {
                 if !compact {
                     Nameplate(standing: standing, emotion: standing?.emotion ?? chat.emotion) { nav.tab = .status }
@@ -237,11 +226,12 @@ struct ChatView: View {
     }
 
     /// The part of the stage below the title.
-    private var visibleStageHeight: CGFloat { compact ? 112 : stageTall ? 260 : 130 }
+    private var visibleStageHeight: CGFloat { compact ? 160 : stageTall ? 260 : 130 }
     private var panelHeight: CGFloat { visibleStageHeight + topInset }
     private var canvasHeight: CGFloat { composerTop > 0 ? composerTop : panelHeight }
-    private var avatarHeight: CGFloat { compact ? min(220, canvasHeight) : panelHeight }
-    private var avatarTop: CGFloat { compact ? max(0, canvasHeight - avatarHeight) : 0 }
+    private var avatarHeight: CGFloat { compact ? 220 : panelHeight }
+    // Most of her stays inside the panel; the forward pose projects across its lower edge.
+    private var avatarTop: CGFloat { compact ? max(topInset, panelHeight - avatarHeight * 0.68) : 0 }
     private var stageIsAlive: Bool { if case .alive = chat.stage.state { return true }; return false }
 
     /// The page centres her in the whole stage, part of which is under the
@@ -308,7 +298,7 @@ struct ChatView: View {
                     Color.clear.frame(height: 1).id("end")
                 }
                 .padding(.horizontal, 12)
-                .padding(.top, compact ? 8 : 44)
+                .padding(.top, compact ? 52 : 44)
                 .padding(.bottom, 8)
             }
             .background(
