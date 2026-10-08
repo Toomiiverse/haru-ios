@@ -136,7 +136,8 @@ import WeatherKit
         }catch{
             executing.remove(id)
             let mutation=command["access"] as? String=="mutation"
-            let value:[String:Any]=began && mutation && !(error is Failure) ? ["ok":false,"unknown":true,"status":"unknown"]:["ok":false,"error":(error as? Failure)?.code ?? "ios_framework_error","executed":false]
+            var value:[String:Any]=began && mutation && !(error is Failure) ? ["ok":false,"unknown":true,"status":"unknown"]:["ok":false,"error":(error as? Failure)?.code ?? "ios_framework_error","executed":false]
+            if let weatherError=error as? WeatherFailure {value["framework"]=["stage":weatherError.stage,"domain":weatherError.domain,"code":weatherError.number]}
             let receipt:[String:Any]=["type":"result","commandId":id,"operationId":op,"data":value]
             try? retain(id,receipt);try? await send(receipt);problem=error.localizedDescription
         }
@@ -229,12 +230,19 @@ import WeatherKit
             let location=try await PhoneLocation.shared.current(lastOnly:action=="last_reported")
             return ["ok":true,"latitude":location.coordinate.latitude,"longitude":location.coordinate.longitude,"accuracyMeters":location.horizontalAccuracy,"recordedAt":iso(location.timestamp)]
         case "ios_weather":
+            var stage="location"
+            do {
             let location:CLLocation
             if let place=args["place"] as? String,!place.isEmpty{let rows=try await CLGeocoder().geocodeAddressString(place);guard rows.count==1,let found=rows[0].location else{throw Failure("ios_ambiguous_location")};location=found}
             else {location=try await PhoneLocation.shared.current()}
-            let service=WeatherService.shared,weather=try await service.weather(for:location),attribution=try await service.attribution
+            stage="forecast"
+            let service=WeatherService.shared,weather=try await service.weather(for:location)
+            stage="attribution"
+            let attribution=try await service.attribution
             weatherMark=attribution.combinedMarkLightURL;weatherLegal=attribution.legalPageURL
             return ["ok":true,"source":"Apple Weather","place":args["place"] as? String ?? "your phone’s reported area","recordedAt":iso(Date()),"current":["condition":String(describing:weather.currentWeather.condition),"temperatureC":weather.currentWeather.temperature.converted(to:.celsius).value],"daily":Array(weather.dailyForecast.forecast.prefix(7)).map{["date":iso($0.date),"lowC":$0.lowTemperature.converted(to:.celsius).value,"highC":$0.highTemperature.converted(to:.celsius).value]},"legalURL":attribution.legalPageURL.absoluteString,"markURL":attribution.combinedMarkLightURL.absoluteString]
+            } catch let error as Failure {throw error}
+            catch {throw WeatherFailure(stage:stage,error:error)}
         case "ios_maps":
             guard let destination=args["destination"] as? String,!destination.isEmpty else{throw Failure("ios_destination_required")}
             let places=try await CLGeocoder().geocodeAddressString(destination);guard places.count==1 else{throw Failure("ios_ambiguous_location")}
@@ -263,6 +271,12 @@ import WeatherKit
     }
     private func healthSamples(_ type:HKSampleType,from:Date,to:Date) async throws->[HKSample]{
         try await withCheckedThrowingContinuation{c in let query=HKSampleQuery(sampleType:type,predicate:HKQuery.predicateForSamples(withStart:from,end:to,options:[]),limit:HKObjectQueryNoLimit,sortDescriptors:nil){_,samples,error in if let error{c.resume(throwing:error)}else{c.resume(returning:samples ?? [])}};health.execute(query)}
+    }
+    // Retain diagnostic identifiers, never NSError.userInfo, URLs or account data.
+    struct WeatherFailure:LocalizedError {
+        let stage:String,domain:String,number:Int
+        init(stage:String,error:Error){self.stage=stage;let cause=error as NSError;domain=String(cause.domain.prefix(120));number=cause.code}
+        var errorDescription:String?{"Apple Weather failed during \(stage) (\(domain), code \(number))."}
     }
     struct Failure:LocalizedError{let code:String;init(_ code:String){self.code=code};var errorDescription:String?{code}}
 }
