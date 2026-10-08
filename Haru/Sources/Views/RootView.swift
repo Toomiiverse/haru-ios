@@ -9,19 +9,19 @@ struct RootView: View {
             if local.selected && session.signedIn != true {
                 LocalConversationView()
             } else {
-            switch session.signedIn {
-            case .none:
-                VStack(spacing: 12) {
-                    ProgressView()
-                    Text("Finding her…").foregroundStyle(.secondary)
-                    Button("Chat on this iPhone") { local.selected = true }
+                switch session.signedIn {
+                case .none:
+                    VStack(spacing: 12) {
+                        ProgressView()
+                        Text("Finding her…").foregroundStyle(.secondary)
+                        Button("Chat on this iPhone") { local.selected = true }
+                    }
+                    .task { await session.check() }
+                case .some(false):
+                    LoginView()
+                case .some(true):
+                    MainTabs()
                 }
-                .task { await session.check() }
-            case .some(false):
-                LoginView()
-            case .some(true):
-                MainTabs()
-            }
             }
         }
         .background(Color("LaunchBackground").ignoresSafeArea())

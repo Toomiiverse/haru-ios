@@ -39,9 +39,6 @@ struct ConversationView: View {
         }
         .background(Color("LaunchBackground"))
         .task(id: session.baseURLString) { if !local.selected { await roleplay.load(session.client) } }
-        .onChange(of: local.selected) { _, selected in
-            if !selected { Task { await roleplay.load(session.client) } }
-        }
         .onChange(of: phase) { _, now in
             if now == .active && !local.selected { Task { await roleplay.load(session.client) } }
         }
