@@ -26,6 +26,7 @@ import Observation
         drive.connect()
         didAutoStart = false
         runtime.chat.inCarPlay = true
+        runtime.chat.onCarPlayInterruption = { [weak self] in self?.stop() }
         Audio.carPlay = true
         let labels = [("ready", "Talk to Haru", "mic.fill"),
                       ("connecting", "Connecting", "antenna.radiowaves.left.and.right"),
@@ -74,6 +75,7 @@ import Observation
         PhoneTools.shared.carPlayDirections = nil
         PhoneTools.shared.activity(carPlayActive: false)
         runtime.chat.inCarPlay = false
+        runtime.chat.onCarPlayInterruption = nil
         Audio.carPlay = false
         scene = nil
         controller = nil
@@ -95,6 +97,11 @@ import Observation
             guard let self else { return }
             defer { if self.startupID == epoch { self.opening = false; self.update() } }
             let chat = self.runtime.chat
+            guard !chat.busy else {
+                chat.notice = "Finish the current reply, then tap Talk."
+                self.drive.stop()
+                return
+            }
             await chat.setStandby(false, persist: false)
             guard !Task.isCancelled else { return }
             chat.stopDrivingAudio()

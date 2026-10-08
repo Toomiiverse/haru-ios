@@ -10,6 +10,7 @@ import SwiftUI
         chat = ChatStore(session: session)
         locator = Locator(session: session)
     }
+}
 
 @main
 struct HaruApp: App {

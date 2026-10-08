@@ -176,7 +176,11 @@ final class ChatStore {
         audio.onInterruption = { [weak self] began, _ in
             guard let self else { return }
             if self.inCarPlay {
-                if began { self.stopDrivingAudio(); self.notice = "Conversation interrupted. Tap Talk to resume." }
+                if began {
+                    self.onCarPlayInterruption?()
+                    self.stopDrivingAudio()
+                    self.notice = "Conversation interrupted. Tap Talk to resume."
+                }
                 return
             }
             guard self.standby else { return }
@@ -650,6 +654,7 @@ final class ChatStore {
     // MARK: On a call
 
     var inCarPlay = false
+    var onCarPlayInterruption: (() -> Void)?
     private var drivingBriefingTask: Task<Bool, Never>?
 
     /// Uses the normal chat/voice transport without consuming the phone composer's draft or attachments.
