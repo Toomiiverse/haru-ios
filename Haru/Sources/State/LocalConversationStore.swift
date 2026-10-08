@@ -221,6 +221,7 @@ final class LocalConversationStore {
             defer { watch.cancel() }
             var prompt = request
             prompt.instructions += "\n\n" + LocalTaskPresentation.opening
+            prompt.messages = [LocalMessage(role: .user, text: "Write only a brief acknowledgement that you are checking. Do NOT answer this pending request: " + question.text)]
             do {
                 var text = ""
                 for try await event in reply(prompt, cancel: acknowledgement, limit: 24) {
@@ -254,8 +255,8 @@ final class LocalConversationStore {
             var prompt = request
             prompt.instructions += "\n\n" + LocalTaskPresentation.rendering
             // Exclude the opening and avoid instruction-like role delimiters in task data.
-            let data = try JSONEncoder().encode(result)
-            prompt.messages = [LocalMessage(role: .user, text: "Original request: " + question.text + "\nTask answer (quoted JSON):\n" + String(decoding: data, as: UTF8.self))]
+            let data = try JSONSerialization.data(withJSONObject: ["answer": result.answer, "status": result.status], options: [.sortedKeys])
+            prompt.messages = [LocalMessage(role: .user, text: "Rewrite this verified answer in your speaking style. Keep every number and unit exactly as written, every location, and today/tomorrow unchanged. Do not add facts. Return only the spoken answer. Quoted data:\n" + String(decoding: data, as: UTF8.self))]
             do {
                 var draft = ""
                 for try await event in reply(prompt, cancel: renderCancel, limit: 256) {

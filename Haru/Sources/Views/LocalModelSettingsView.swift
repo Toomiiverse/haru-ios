@@ -19,7 +19,7 @@ struct LocalModelSettingsView: View {
         @Bindable var download = local.download
         Form {
             Section {
-                LabeledContent("Text replies", value: local.selected ? local.model.shortName + " · Automatic tasks" : "Haru server")
+                LabeledContent("Conversation", value: local.selected ? local.model.shortName + " · Automatic tasks" : "Haru server")
                 if local.selected {
                     Button(session.signedIn == true ? "Use Haru server" : "Server sign-in") { local.selected = false }
                         .disabled(switchingDisabled)
@@ -37,7 +37,7 @@ struct LocalModelSettingsView: View {
                     }.disabled(switchingDisabled || !download.ready)
                 }
             } header: { Text("Haru’s conversation") }
-                footer: { Text("Use the same Chat screen and avatar. Quick conversation stays on the phone. For harder tasks, Haru can speak while the server checks your original request, then puts the result into her own words locally. Personality, local history and notes stay on the phone. The task service supports weather, public research and analysis. iPhone actions and attachments are not connected to this route yet. Her custom spoken voice and full calls still use the server.") }
+                footer: { Text("Use the same Chat screen and avatar. Quick conversation stays on the phone. For harder tasks, Haru can speak while the server checks your original request, then puts the result into her own words locally. Local personality prompts, history and notes aren’t added to task requests. The task service supports weather, public research and analysis. iPhone actions and attachments are not connected to this route yet. Her custom spoken voice and full calls still use the server.") }
             Section {
                 Picker("Local model", selection: Binding(get: { local.model }, set: { model in
                     Task { await local.chooseModel(model) }
@@ -243,7 +243,7 @@ struct LocalMessageRow: View {
                                 .disabled(local.unavailable || !local.download.ready || chat.call != nil || chat.micOn)
                         }
                         if !message.text.isEmpty && session.signedIn == true {
-                            Button("Read via server", systemImage: "speaker.wave.2") {
+                            Button("Read aloud", systemImage: "speaker.wave.2") {
                                 _ = chat.tapToHush(); chat.say(message.text, emotion: nil)
                             }.accessibilityHint("Sends only this reply to the server for speech")
                                 .disabled(local.unavailable || chat.busy || chat.call != nil || chat.micOn)

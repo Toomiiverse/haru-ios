@@ -251,7 +251,7 @@ enum LocalTaskPresentation {
         let line = text.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !line.isEmpty, line.count < 100,
               line.range(of: #"(?i)\d|\b(done|sent|created|deleted|booked|confirmed|found|sunny|rainy|degrees)\b"#, options: .regularExpression) == nil,
-              line.range(of: #"(?i)\b(check|look|moment|second|see)\b"#, options: .regularExpression) != nil else { return nil }
+              line.range(of: #"(?i)\b(check|checking|look|looking|moment|second|see)\b"#, options: .regularExpression) != nil else { return nil }
         return line
     }
     /// A conservative lexical guard, not a semantic proof. Original evidence is retained.
@@ -262,6 +262,21 @@ enum LocalTaskPresentation {
             return r.matches(in: value, range: NSRange(value.startIndex..., in: value)).map { String(value[Range($0.range, in: value)!]).lowercased() }.sorted()
         }
         guard result.canRephrase, !text.isEmpty, !text.contains(LocalHandoff.marker), numbers(text) == numbers(result.answer) else { return result.answer }
+        if result.route == "core-everyday-weather" {
+            // Weather is a measured task result: preserve conditions, day and named place too.
+            let conditions = #"(?i)\b(mainly clear|partly cloudy|heavy rain|light rain|rain showers|freezing drizzle|heavy drizzle|light drizzle|freezing rain|heavy snow|light snow|snow showers|snow grains|thunderstorms(?: with hail)?|overcast|foggy|clear|drizzle|rain|snow)\b"#
+            func terms(_ value: String, pattern: String) -> [String] {
+                let r = try! NSRegularExpression(pattern: pattern)
+                return r.matches(in: value, range: NSRange(value.startIndex..., in: value)).map { String(value[Range($0.range, in: value)!]).lowercased() }.sorted()
+            }
+            guard terms(text, pattern: conditions) == terms(result.answer, pattern: conditions) else { return result.answer }
+            for day in ["today", "tomorrow"] where result.answer.lowercased().contains(day) {
+                if !text.lowercased().contains(day) { return result.answer }
+            }
+            for name in terms(result.answer, pattern: #"\b[A-Z][a-z]+\b"#) where !["forecast", "tomorrow", "take", "you", "feels", "sunrise", "sunset"].contains(name) {
+                if !text.lowercased().contains(name) { return result.answer }
+            }
+        }
         return text
     }
 }
