@@ -17,6 +17,8 @@ test('native keyboard peek stays readable, tracks typing and restores the latest
   api.attend('typing',1500);assert.deepEqual(calls.at(-1),['attend','typing',3600000]);
   api.express('happy');assert.notDeepEqual(calls.at(-1),['express','happy']);
   api.mouth(.7);assert.equal(c.window.haruNative.mouth,.7);assert.equal(c.window.haruNative.speakingUntil,1450);
+  api.mouth(0);assert.equal(c.window.haruNative.mouth,0);
+  api.tap();assert.deepEqual(calls.at(-1),['tap']);
   api.frame(1,0,1,false);assert.deepEqual(calls.at(-2),['express','happy']);assert.equal(classes.get('peek'),false);
   c.window.haruNative.ready();assert.deepEqual(calls.at(-2),['express','happy']);
   assert.match(html,/#scene\.peek #stage\s*\{[^}]*height:280px/);
@@ -31,4 +33,7 @@ test('the bundled stage uses shared hair, sleep, speech and depth rendering',()=
   for(const marker of ['avatar-sleep-layer','avatar-depth','haruNative'])assert.ok(html.includes(marker),marker);
   assert.match(html,/\.svg\?v=[a-f0-9]{16}/);
   assert.ok(!html.includes('const POKES = { exclaim:'));
+  assert.ok(html.includes('--glow-voice'));
+  assert.ok(!html.includes('id="aura"'));
+  assert.ok(!html.includes('<i class="floor">'));
 });

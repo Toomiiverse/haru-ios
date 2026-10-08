@@ -48,22 +48,15 @@ const css = ''; // The shared bundle supplies its own scoped renderer styles.
 const root = evaluate(slice('  :root {', '\n  }', 'theme tokens'));
 if (!avatar.includes('haruAvatar')) throw new Error('the avatar script does not look right');
 
-// The ambient field behind her: soft orbs that drift, sparks that rise and
-// twinkle, a glow at her feet. Placed by a seeded generator so the file is
-// the same every sync; sizes and speeds vary so nothing reads as a pattern.
+// Sparse background sparks; all light around Haru belongs to her renderer.
 function seeded(seed) { let x = seed >>> 0; return () => { x = (x * 1664525 + 1013904223) >>> 0; return x / 4294967296; }; }
 const rand = seeded(HUE * 7919 + 1);
 const pct = (v) => (v * 100).toFixed(1) + '%';
-const orbs = Array.from({ length: 7 }, (_, i) => {
-  const w = 90 + rand() * 170, dx = (rand() - 0.5) * 60, dy = (rand() - 0.5) * 40;
-  const style = `--x:${pct(rand())};--y:${pct(rand())};--w:${w.toFixed(0)}px;--dx:${dx.toFixed(0)}px;--dy:${dy.toFixed(0)}px;--d:${(14 + rand() * 12).toFixed(1)}s;--t:${(-rand() * 20).toFixed(1)}s;--h:${((i % 3) - 1) * 40};--o:${(0.14 + rand() * 0.18).toFixed(2)}`;
-  return `<i class="orb" style="${style}"></i>`;
-}).join('');
 const sparks = Array.from({ length: 30 }, () => {
   const style = `--x:${pct(rand())};--y:${pct(0.15 + rand() * 0.85)};--s:${(1 + rand() * 2.2).toFixed(1)}px;--d:${(6 + rand() * 9).toFixed(1)}s;--t:${(-rand() * 14).toFixed(1)}s;--o:${(0.25 + rand() * 0.55).toFixed(2)};--r:${(10 + rand() * 26).toFixed(0)}px`;
   return `<i class="spark" style="${style}"></i>`;
 }).join('');
-const field = `<i class="floor"></i>${orbs}${sparks}`;
+const field = `${sparks}`;
 
 const html = `<!doctype html>
 <meta charset="utf-8">
@@ -97,37 +90,15 @@ ${css}
 #scene.peek #stage { top:auto; height:280px; bottom:-42px; }
 #scene.peek .svg-avatar-canvas { align-items:flex-end; }
 @media(prefers-reduced-motion:reduce){#her{transition:none;}}
-/* The field she stands in: orbs adrift, sparks rising, a glow at her feet.
-   Slow and dim on its own; a shade brighter while she speaks. Nothing here
-   moves under reduced motion. */
+/* Quiet background sparks stay separate from her responsive light. */
 #field { position:absolute; inset:0; overflow:hidden; pointer-events:none; --lift:1; }
 #field i { position:absolute; display:block; border-radius:50%; will-change:transform, opacity; }
-#field .floor { left:50%; top:78%; width:120%; height:55%; transform:translate(-50%,-50%); border-radius:50%; background:radial-gradient(ellipse at center, oklch(55% 0.13 var(--hue) / 0.22), oklch(40% 0.10 calc(var(--hue) + 30) / 0.08) 45%, transparent 70%); filter:blur(22px); }
-#field .orb { left:var(--x); top:var(--y); width:var(--w); aspect-ratio:1; transform:translate(-50%,-50%); background:radial-gradient(circle, oklch(72% 0.13 calc(var(--hue) + var(--h)) / var(--o)), oklch(60% 0.12 calc(var(--hue) + var(--h)) / calc(var(--o) * 0.5)) 40%, transparent 70%); filter:blur(16px); animation:drift var(--d) ease-in-out infinite alternate; animation-delay:var(--t); }
 #field .spark { left:var(--x); top:var(--y); width:var(--s); height:var(--s); background:oklch(94% 0.06 var(--hue)); box-shadow:0 0 6px 1px oklch(86% 0.12 var(--hue) / 0.7); opacity:0; animation:twinkle var(--d) ease-in-out infinite; animation-delay:var(--t); }
-@keyframes drift { from { transform:translate(-50%,-50%) translate(0,0) scale(1); } to { transform:translate(-50%,-50%) translate(var(--dx), var(--dy)) scale(1.15); } }
 @keyframes twinkle { 0% { opacity:0; transform:translateY(0) scale(.6); } 35% { opacity:calc(var(--o) * var(--lift)); transform:translateY(calc(var(--r) * -.4)) scale(1); } 70% { opacity:calc(var(--o) * .7 * var(--lift)); } 100% { opacity:0; transform:translateY(calc(var(--r) * -1)) scale(.5); } }
-#scene.live #field { --lift:1.6; }
-@media (prefers-reduced-motion: reduce) { #field .orb, #field .spark { animation:none !important; } #field .spark { opacity:calc(var(--o) * .6); } }
-/* Her voice, as light: a glow behind her that swells with the level of what
-   she is saying, and rings that spread from her while she speaks. Driven from
-   the app's audio meter through haruStage.mouth; dark and still otherwise. */
-#aura { position:absolute; inset:0; display:flex; align-items:center; justify-content:center; pointer-events:none; --voice:0; --live:0; }
-#aura i { position:absolute; display:block; width:var(--scene-size); aspect-ratio:1; border-radius:50%; will-change:transform, opacity; }
-#aura .glow {
-  background:radial-gradient(circle, oklch(82% 0.14 var(--hue) / 0.60) 0%, oklch(64% 0.13 var(--hue) / 0.30) 40%, oklch(46% 0.12 calc(var(--hue) + 40) / 0.12) 60%, transparent 72%);
-  filter:blur(14px);
-  opacity:calc(var(--live) * (0.28 + var(--voice) * 0.72));
-  transform:scale(calc(0.92 + var(--voice) * 0.32));
-  transition:opacity .35s ease, transform .09s ease-out;
-}
-#aura .ring { border:1.5px solid oklch(88% 0.10 var(--hue) / 0.55); opacity:0; }
-#scene.live .ring { animation:ripple 2.4s cubic-bezier(.2,.6,.3,1) infinite; }
-#scene.live .r2 { animation-delay:1.2s; }
-@keyframes ripple { 0% { transform:scale(.80); opacity:calc(.10 + var(--voice) * .55); } 100% { transform:scale(1.55); opacity:0; } }
-@media (prefers-reduced-motion: reduce) { #aura .ring { animation:none !important; } }
+@media (prefers-reduced-motion: reduce) { #field .spark { animation:none !important; opacity:calc(var(--o) * .6); } }
+/* Her shared renderer owns the moving, breathing, audio-reactive halo. */
 </style>
-<div id="scene"><div id="field">${field}</div><div id="her"><div id="aura"><i class="glow"></i><i class="ring r1"></i><i class="ring r2"></i></div><section id="stage"></section></div></div>
+<div id="scene"><div id="field">${field}</div><div id="her"><section id="stage"></section></div></div>
 <script>
 (() => {
   const tell = (message) => { try { window.webkit.messageHandlers.stage.postMessage(message); } catch (e) {} };
@@ -150,28 +121,7 @@ ${css}
     // (typing) shrinks her smoothly with the stage rather than in one jump.
     her.style.transform = 'translateY(' + (-framing.lift * 100).toFixed(1) + '%) scale(' + (framing.scale * framing.zoom).toFixed(3) + ')';
   };
-  // The aura follows her voice: the meter's level is the target, reached
-  // quickly on the way up and let go slowly, so syllables show and pauses
-  // breathe. A talking cue without audio yet keeps a low glow going.
-  let voice = 0, target = 0, speakingUntil = 0, raf = 0;
-  const tick = () => {
-    const aura = document.getElementById('aura');
-    const scene = document.getElementById('scene');
-    const now = performance.now();
-    if (now > speakingUntil) target = 0;
-    voice += (target - voice) * (target > voice ? 0.55 : 0.10);
-    if (voice < 0.005) voice = 0;
-    const live = now < speakingUntil + 700;
-    if (aura) {
-      aura.style.setProperty('--voice', voice.toFixed(3));
-      aura.style.setProperty('--live', live ? '1' : '0');
-      aura.classList.toggle('live', live);
-    }
-    if (scene) scene.classList.toggle('live', live);
-    raf = (live || voice > 0) ? requestAnimationFrame(tick) : 0;
-  };
-  const wake = () => { if (!raf) raf = requestAnimationFrame(tick); };
-  const speaking = (ms) => { native.speakingUntil = performance.now() + ms; speakingUntil = Math.max(speakingUntil, performance.now() + ms); target = Math.max(target, 0.12); wake(); };
+  const speaking = (ms) => { native.speakingUntil = performance.now() + ms; };
   window.haruStage = {
     express: (name) => { if (name) face = name; const a = window.haruAvatar; if (a && !native.peek) a.express(face); },
     attend: (why, ms) => {
@@ -182,7 +132,7 @@ ${css}
       else if (why === 'talking') { a.notify(); a.attend('talking', ms); }
       else a.attend(why, native.peek && why === 'typing' ? 3600000 : ms);
     },
-    mouth: (level) => { target = clamp(Number(level) || 0, 0, 1); native.mouth = target; native.speakingUntil = performance.now() + 450; speakingUntil = Math.max(speakingUntil, performance.now() + 450); wake(); },
+    mouth: (level) => { native.mouth = clamp(Number(level) || 0, 0, 1); native.speakingUntil = performance.now() + 450; },
     tap: () => window.haruAvatar?.tap(),
     motion: () => {},
     frame: (zoom, lift, scale, peek) => { const changed = native.peek !== !!peek; native.peek = !!peek; framing = { zoom: clamp(Number(zoom) || 1, 0.5, 3), lift: clamp(Number(lift) || 0, -1, 1), scale: clamp(Number(scale) || 1, 0.2, 1) }; applyFraming(); if (changed) present(); },
