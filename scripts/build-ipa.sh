@@ -5,6 +5,12 @@
 set -euo pipefail
 cd "$(dirname "$0")/.."
 
+# Isolated evaluation branch: run native model probes without building,
+# signing, uploading an app, or touching any Haru server route.
+if git log -1 --format=%B | grep -qx 'Haru-Model-Eval: umbral-v3'; then
+  exec bash scripts/test-umbral-comparison.sh
+fi
+
 # Qualification builds must be possible even on runners with signing secrets.
 # The commit trailer also works with the existing workflow_dispatch workflow.
 if git log -1 --format=%B | grep -qx 'Haru-Build-Only: true'; then HARU_BUILD_ONLY=1; fi
