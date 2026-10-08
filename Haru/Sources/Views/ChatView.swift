@@ -38,6 +38,7 @@ struct ChatView: View {
     @State private var topInset: CGFloat = 0
     /// Where things stand with her, for the plate across the seam.
     @State private var standing: Standing?
+    @State private var showStatus = false
     @AppStorage("stage.zoom") private var stageZoom = 1.0
     @AppStorage("stage.lift") private var stageLift = 0.0
     @FocusState private var typing: Bool
@@ -65,13 +66,12 @@ struct ChatView: View {
                 .onChange(of: geo.safeAreaInsets.top) { _, now in topInset = now }
             }
             .toolbar {
-                ToolbarItem(placement: .principal) { header }
                 ToolbarItem(placement: .topBarTrailing) {
-                    Button {
-                        Task { await refreshChat() }
-                    } label: { Label("Refresh chat", systemImage: "arrow.clockwise") }
-                    .disabled(chat.busy || chat.loading || chat.call != nil)
-                    .accessibilityHint("Reload messages from the server")
+                    Button { showStatus = true } label: {
+                        Label("Haru status", systemImage: MoodLook.symbol(for: standing?.emotion ?? chat.emotion))
+                    }
+                    .accessibilityHint("Show her mood, activity and relationship status")
+                    .popover(isPresented: $showStatus) { statusMenu }
                 }
             }
             .navigationBarTitleDisplayMode(.inline)
@@ -174,15 +174,6 @@ struct ChatView: View {
                     .offset(y: compact ? avatarTop + (avatarHeight - 190) / 2 : 0)
                     .allowsHitTesting(stageIsAlive)
             }
-            .overlay(alignment: .top) {
-                if !compact {
-                    Nameplate(standing: standing, emotion: standing?.emotion ?? chat.emotion) { nav.tab = .status }
-                        .padding(.horizontal, 16)
-                        .frame(height: panelHeight, alignment: .bottom)
-                        .offset(y: 28)
-                        .transition(.opacity.combined(with: .move(edge: .top)))
-                }
-            }
             .zIndex(1)
             .overlay(alignment: .top) {
                 Group {
@@ -255,13 +246,24 @@ struct ChatView: View {
         chat.stage.frame(zoom: compact ? 1 : stageZoom, lift: compact ? 0 : stageLift - under, scale: 1, peek: compact)
     }
 
-    // MARK: Header
+    // MARK: Status quick menu
 
-    private var header: some View {
-        VStack(spacing: 0) {
-            Text("Haru").font(.headline)
-            Text(state).font(.caption).foregroundStyle(.secondary)
+    private var statusMenu: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            Text("Status & mood").font(.headline)
+            LabeledContent("Activity", value: state).font(.subheadline)
+            Nameplate(standing: standing, emotion: standing?.emotion ?? chat.emotion) { openStatus() }
+            Button("View full status", systemImage: "heart.text.square") { openStatus() }
         }
+        .padding(16)
+        .frame(idealWidth: 340, maxWidth: 360)
+        .presentationCompactAdaptation(.popover)
+        .task { await refreshStanding() }
+    }
+
+    private func openStatus() {
+        showStatus = false
+        nav.tab = .status
     }
 
     private var state: String {
@@ -295,7 +297,7 @@ struct ChatView: View {
                     Color.clear.frame(height: 1).id("end")
                 }
                 .padding(.horizontal, 12)
-                .padding(.top, compact ? 8 : 44)
+                .padding(.top, 8)
                 .padding(.bottom, 8)
             }
             .clipped()
