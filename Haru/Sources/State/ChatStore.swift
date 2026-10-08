@@ -82,7 +82,9 @@ final class ChatStore {
     private(set) var talkState = TalkState.off
     /// The call, when the mic is on and she is being reached through Hume.
     private(set) var call: EviCall?
-    private(set) var callState = CallState.off
+    private(set) var callState = CallState.off {
+        didSet { PhoneTools.shared.activity(callActive: callState == .listening || callState == .thinking || callState == .speaking) }
+    }
     /// What she said while a tool ran, for the pill; nil once the reply comes.
     private(set) var callFiller: String?
     /// Whether a call can be placed, from the server; nil until asked.

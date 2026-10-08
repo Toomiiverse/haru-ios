@@ -51,10 +51,6 @@ struct HaruApp: App {
                 .environment(locator)
                 .environment(Navigator.shared)
                 .onOpenURL { Navigator.shared.open($0) }
-                .task { PhoneTools.shared.activity(foreground: phase == .active) }
-                .onChange(of: chat.callState) { _, state in
-                    PhoneTools.shared.activity(callActive: state == .listening || state == .thinking || state == .speaking)
-                }
                 // A control's intent can land after the app is already in front.
                 .onReceive(NotificationCenter.default.publisher(for: Shared.asked)) { _ in
                     if phase == .active || Shared.waitingAsk == .hangUp { takeAsk() }
