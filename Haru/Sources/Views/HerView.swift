@@ -5,6 +5,8 @@ struct HerView: View {
     @Environment(Session.self) private var session
     @State private var her: Her?
     @State private var problem: String?
+    @State private var references = RoleplayStore()
+    @State private var showReferences = false
 
     var body: some View {
         NavigationStack {
@@ -22,6 +24,11 @@ struct HerView: View {
                         } icon: {
                             Image(systemName: "leaf.fill")
                         }
+                    }
+                }
+                Section {
+                    Button { showReferences = true } label: {
+                        Label("Saved context for Haru", systemImage: "text.book.closed")
                     }
                 }
                 if let her {
@@ -95,6 +102,7 @@ struct HerView: View {
             .refreshable { await load() }
         }
         .task { await load() }
+        .sheet(isPresented: $showReferences) { HaruReferenceLibrary(store: references) }
     }
 
     private func nights(_ n: Her.NightsOut) -> String {

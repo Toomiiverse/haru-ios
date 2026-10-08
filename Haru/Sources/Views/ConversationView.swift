@@ -9,7 +9,6 @@ struct ConversationView: View {
     @Environment(\.scenePhase) private var phase
     @State private var roleplay = RoleplayStore()
     @State private var chooseCharacter = false
-    @State private var showReferences = false
 
     var body: some View {
         VStack(spacing: 0) {
@@ -31,7 +30,6 @@ struct ConversationView: View {
             .padding(.vertical, 8)
             .disabled(roleplay.waiting || chat.busy || chat.call != nil || chat.micOn || local.unavailable)
             .accessibilityHint("Choose server AI, a character, or Dolphin on this iPhone")
-            if !local.selected { Button("Saved context for Haru") { showReferences = true }.font(.caption).padding(.bottom, 4) }
             if local.selected { LocalConversationView() }
             else if roleplay.state?.mode == "character" {
                 CharacterChatView(store: roleplay, chooseCharacter: $chooseCharacter)
@@ -43,7 +41,6 @@ struct ConversationView: View {
             if now == .active && !local.selected { Task { await roleplay.load(session.client) } }
         }
         .sheet(isPresented: $chooseCharacter) { CharacterPicker(store: roleplay) }
-        .sheet(isPresented: $showReferences) { HaruReferenceLibrary(store: roleplay) }
         .alert("Character mode", isPresented: Binding(get: { roleplay.problem != nil }, set: { if !$0 { roleplay.problem = nil } })) {
             Button("OK") { roleplay.problem = nil }
         } message: { Text(roleplay.problem ?? "") }
@@ -563,6 +560,9 @@ struct HaruReferenceLibrary: View {
             .sheet(item: $editing) { reference in HaruReferenceEditor(store: store, reference: reference) }
             .task { await store.loadReferences(session.client) }
             .toolbar { Button("Done") { dismiss() } }
+            .alert("Saved context for Haru", isPresented: Binding(get: { store.problem != nil }, set: { if !$0 { store.problem = nil } })) {
+                Button("OK") { store.problem = nil }
+            } message: { Text(store.problem ?? "") }
             .confirmationDialog("Remove this reference?", isPresented: Binding(get: { deleting != nil }, set: { if !$0 { deleting = nil } }), titleVisibility: .visible) {
                 Button("Remove reference", role: .destructive) { if let reference = deleting { Task { await store.removeReference(reference, session.client) } }; deleting = nil }
             }
