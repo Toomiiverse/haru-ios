@@ -659,6 +659,11 @@ struct EntryView: View {
                         }
                 }
             }
+            if entry.text.contains("Apple Weather for"),let legal=PhoneTools.shared.weatherLegal {
+                Link(destination:legal) {
+                    if let mark=PhoneTools.shared.weatherMark {AsyncImage(url:mark){image in image.resizable().scaledToFit()} placeholder:{Text("Apple Weather")}.frame(height:18)} else {Text("Apple Weather attribution")}
+                }
+            }
             if entry.serverID != nil && !entry.aside && !entry.waiting { actions }
         }
         .frame(maxWidth: .infinity, alignment: .leading)
