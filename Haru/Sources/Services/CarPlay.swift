@@ -7,14 +7,12 @@ import Observation
 @available(iOS 26.4, *)
 @MainActor final class HaruCarPlayScene: NSObject, CPTemplateApplicationSceneDelegate {
     private weak var scene: CPTemplateApplicationScene?
-    private var controller: CPInterfaceController?
     private var voice: CPVoiceControlTemplate?
     private var states: [CPVoiceControlState] = []
     private var drive = DriveState()
     private var starting: Task<Void, Never>?
     private var opening = false
     private var ready = false
-    private var didAutoStart = false
     private var startupID = UUID()
     private var route: (url: URL, expires: Date)?
     private var runtime: HaruRuntime { .shared }
@@ -22,9 +20,7 @@ import Observation
     func templateApplicationScene(_ templateApplicationScene: CPTemplateApplicationScene,
                                   didConnect interfaceController: CPInterfaceController) {
         scene = templateApplicationScene
-        controller = interfaceController
         drive.connect()
-        didAutoStart = false
         runtime.chat.inCarPlay = true
         runtime.chat.onCarPlayInterruption = { [weak self] in self?.stop() }
         Audio.carPlay = true
@@ -43,7 +39,7 @@ import Observation
             guard let self else { return }
             self.ready = success
             if !success { self.runtime.chat.notice = error?.localizedDescription ?? "CarPlay could not open Haru." }
-            if success, self.drive.visible, !self.didAutoStart { self.start() }
+            if success, self.drive.automaticStartAvailable { self.start() }
         }
         update()
         observe()
@@ -56,7 +52,7 @@ import Observation
             guard let self else { throw PhoneTools.Failure("ios_carplay_disconnected") }
             return try await self.prepareTrip(destination: destination, mode: mode, expires: expires)
         }
-        if ready, !didAutoStart { start() }
+        if ready, drive.automaticStartAvailable { start() }
         else { update() }
     }
 
@@ -78,7 +74,6 @@ import Observation
         runtime.chat.onCarPlayInterruption = nil
         Audio.carPlay = false
         scene = nil
-        controller = nil
         voice = nil
         if UIApplication.shared.applicationState == .active {
             Task { await runtime.chat.standbyOnActive() }
@@ -87,7 +82,6 @@ import Observation
 
     private func start() {
         guard ready, drive.begin() else { return }
-        didAutoStart = true
         let epoch = UUID()
         startupID = epoch
         opening = true
@@ -95,15 +89,24 @@ import Observation
         update()
         starting = Task { [weak self] in
             guard let self else { return }
-            defer { if self.startupID == epoch { self.opening = false; self.update() } }
+            let deadline = Task { [weak self] in
+                do { try await Task.sleep(for: .seconds(90)) } catch { return }
+                guard let self, self.startupID == epoch, self.opening else { return }
+                self.stop()
+                self.runtime.chat.notice = "Haru took too long to connect. Tap Talk to retry."
+            }
+            defer {
+                deadline.cancel()
+                if self.startupID == epoch { self.opening = false; self.update() }
+            }
             let chat = self.runtime.chat
+            await chat.setStandby(false, persist: false)
+            guard !Task.isCancelled else { return }
             guard !chat.busy else {
                 chat.notice = "Finish the current reply, then tap Talk."
                 self.drive.stop()
                 return
             }
-            await chat.setStandby(false, persist: false)
-            guard !Task.isCancelled else { return }
             chat.stopDrivingAudio()
             await self.runtime.session.check()
             guard !Task.isCancelled, self.drive.visible, self.startupID == epoch else { return }

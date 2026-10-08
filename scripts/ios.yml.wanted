@@ -7,17 +7,22 @@ on:
   push:
     branches: [main]
   workflow_dispatch:
+    inputs:
+      upload_to_testflight:
+        description: Upload after the CarPlay entitlement is approved for this App ID
+        type: boolean
+        default: false
 jobs:
   build:
-    runs-on: macos-15
+    runs-on: xcode-27
     steps:
       - uses: actions/checkout@v4
       - name: Build (signed and uploaded to TestFlight when the secrets are set; unsigned otherwise)
         env:
-          ASC_KEY_ID: ${{ secrets.ASC_KEY_ID }}
-          ASC_ISSUER_ID: ${{ secrets.ASC_ISSUER_ID }}
-          ASC_KEY_P8: ${{ secrets.ASC_KEY_P8 }}
-          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+          ASC_KEY_ID: ${{ (github.event_name == 'push' || inputs.upload_to_testflight) && secrets.ASC_KEY_ID || '' }}
+          ASC_ISSUER_ID: ${{ (github.event_name == 'push' || inputs.upload_to_testflight) && secrets.ASC_ISSUER_ID || '' }}
+          ASC_KEY_P8: ${{ (github.event_name == 'push' || inputs.upload_to_testflight) && secrets.ASC_KEY_P8 || '' }}
+          APPLE_TEAM_ID: ${{ (github.event_name == 'push' || inputs.upload_to_testflight) && secrets.APPLE_TEAM_ID || '' }}
         run: bash scripts/build-ipa.sh
       - uses: actions/upload-artifact@v4
         if: always()

@@ -40,7 +40,10 @@ What it does:
 ## Building
 
 There is no Xcode project checked in. `project.yml` is the project; XcodeGen
-turns it into one. Xcode 16 or newer, iOS 17 or newer on the phone.
+turns it into one. Build with Xcode 27 or newer; the phone app still supports iOS 17 or newer.
+
+For the CarPlay voice interface, driving briefing, Apple Maps handoff, entitlement
+approval and personal launch automation, see [CarPlay setup](CARPLAY.md).
 
 ### With a Mac
 
@@ -57,16 +60,11 @@ VPN & Device Management.
 
 ### Without a Mac
 
-`.github/workflows/ios.yml` runs `scripts/build-ipa.sh`, which builds an unsigned `.ipa` on GitHub's macOS runner
-on every push to `main` (or by hand: Actions → iOS build → Run workflow).
-Download the `Haru-unsigned-ipa` artifact from the run, then sign and install
-it from the Windows PC with [Sideloadly](https://sideloadly.io) — plug the
-phone in, drop the `.ipa` on it, sign in with your Apple ID.
-
-- With a free Apple ID the app expires after 7 days; re-sideload to renew.
-  Three sideloaded apps at a time.
-- With a paid Apple Developer account ($99/yr) it lasts a year, and that
-  account is also what real push notifications would need (below).
+`.github/workflows/ios.yml` runs `scripts/build-ipa.sh` on GitHub's `xcode-27`
+runner. Manual runs build an unsigned IPA unless `upload_to_testflight` is enabled.
+The unsigned artifact verifies compilation; installing the CarPlay app requires
+signing with a profile that includes Apple's approved voice-conversation entitlement.
+An ordinary sideloading profile does not grant that capability.
 
 Xcode's own errors, if any, show up in the Actions log; the build is the compiler
 for this repo.
@@ -79,7 +77,8 @@ Connect when the workflow hands it four repository secrets: `ASC_KEY_ID`,
 `APPLE_TEAM_ID`. `scripts/arm-testflight.sh` sets them from the `.p8` and
 starts a build; `scripts/ios.yml.wanted` is the workflow that passes them (it
 has to be copied over `.github/workflows/ios.yml` from a machine whose GitHub
-token has the `workflow` scope). Each push to `main` then lands in TestFlight
+token has the `workflow` scope). Once CarPlay approval is enabled on the App ID,
+each push to `main` (or a manual run with `upload_to_testflight`) lands in TestFlight
 a few minutes later, build number = the run number. Real push notifications
 need a second key: `scripts/install-apns.sh` puts the APNs `.p8` on the
 server and sets `apns` in its config.

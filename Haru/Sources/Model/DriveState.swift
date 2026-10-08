@@ -6,11 +6,14 @@ struct DriveState {
     private(set) var visible = false
     private(set) var running = false
     private(set) var briefed = false
+    private var attemptedStart = false
+    var automaticStartAvailable: Bool { connected && visible && !attemptedStart }
 
     mutating func connect() { self = DriveState(); connected = true }
     mutating func activate() { visible = connected }
     mutating func begin() -> Bool {
         guard connected, visible, !running else { return false }
+        attemptedStart = true
         running = true
         return true
     }
