@@ -56,7 +56,13 @@ struct HaruApp: App {
                 .environment(Navigator.shared)
                 .onAppear {
                     local.serverTask = { text, id in try await chat.taskForLocalConversation(text, requestID: id) }
-                    local.speak = { text in chat.say(text, emotion: nil) }
+                    local.speak = { text in if session.signedIn == true { chat.say(text, emotion: nil) } }
+                    local.loadPersonality = {
+                        struct Profile: Decodable { let version: Int; let instructions: String }
+                        let profile: Profile = try await session.client.post("/api/local/profile")
+                        guard profile.version == 1 else { throw LocalChatError.message("Unsupported local profile version.") }
+                        return profile.instructions
+                    }
                 }
                 .onOpenURL { Navigator.shared.open($0) }
                 .onReceive(NotificationCenter.default.publisher(for: UIApplication.didReceiveMemoryWarningNotification)) { _ in

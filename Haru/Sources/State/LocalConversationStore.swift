@@ -10,6 +10,7 @@ final class LocalConversationStore {
     /// Transport supplied by the existing server chat adapter; never a second server policy.
     var serverTask: ((String, String) async throws -> LocalTaskResult)?
     var speak: ((String) -> Void)?
+    var loadPersonality: (() async throws -> String)?
     /// Injectable native generation boundary for deterministic orchestration tests.
     var generate: ((LocalConversationArchive, DolphinCancellation, Int) -> AsyncThrowingStream<DolphinEvent, Error>)?
     private(set) var archive = LocalConversationArchive()
@@ -56,6 +57,15 @@ final class LocalConversationStore {
         }
     }
 
+    func syncPersonality() async {
+        guard !unavailable, let loadPersonality else { return }
+        do {
+            let text = try await loadPersonality()
+            guard !text.isEmpty, text.count <= 2000 else { throw LocalChatError.message("The local personality profile is invalid.") }
+            updateSettings(instructions: text, notes: archive.notes, contextSize: archive.contextSize)
+        } catch { problem = "Haru’s personality could not be copied: " + error.localizedDescription }
+    }
+
     func copyConversation(_ messages: [LocalMessage]) {
         guard !unavailable, storageHealthy else { return }
         let previous = archive
@@ -100,7 +110,7 @@ final class LocalConversationStore {
     }
 
     func retry() {
-        guard !unavailable, download.ready, storageHealthy,
+        guard !unavailable, (download.ready || generate != nil), storageHealthy,
               let last = archive.messages.last, last.role == .assistant,
               archive.messages.dropLast().last?.role == .user else { return }
         let previous = archive
@@ -184,7 +194,9 @@ final class LocalConversationStore {
     }
 
     private func reply(_ prompt: LocalConversationArchive, cancel: DolphinCancellation, limit: Int) -> AsyncThrowingStream<DolphinEvent, Error> {
-        generate?(prompt, cancel, limit) ?? engine.reply(model: download.files.model, archive: prompt, cancellation: cancel, maxTokens: limit, descriptor: model)
+        var grounded = prompt
+        grounded.instructions += "\n" + LocalHandoff.grounding
+        return generate?(grounded, cancel, limit) ?? engine.reply(model: download.files.model, archive: grounded, cancellation: cancel, maxTokens: limit, descriptor: model)
     }
 
     private func performTask(_ request: LocalConversationArchive, responseID: String) async throws {

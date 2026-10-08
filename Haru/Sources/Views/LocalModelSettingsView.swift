@@ -19,7 +19,7 @@ struct LocalModelSettingsView: View {
         @Bindable var download = local.download
         Form {
             Section {
-                LabeledContent("Text replies", value: local.selected ? local.model.shortName + (local.automaticHandoff ? " → Server" : " · This iPhone") : "Haru server")
+                LabeledContent("Text replies", value: local.selected ? local.model.shortName + " · Automatic tasks" : "Haru server")
                 if local.selected {
                     Button(session.signedIn == true ? "Use Haru server" : "Server sign-in") { local.selected = false }
                         .disabled(switchingDisabled)
@@ -28,11 +28,16 @@ struct LocalModelSettingsView: View {
                         local.copyConversation(chat.entries.filter { !$0.waiting && $0.kind != .system }.map {
                             LocalMessage(id: "server-" + $0.id, role: $0.kind == .me ? .user : .assistant, text: $0.text)
                         })
-                        if local.problem == nil { local.selected = true }
+                        if local.problem == nil {
+                            local.selected = true
+                            if session.signedIn == true, local.archive.instructions == DolphinModel.defaultInstructions {
+                                Task { await local.syncPersonality(); instructions = local.archive.instructions }
+                            }
+                        }
                     }.disabled(switchingDisabled || !download.ready)
                 }
             } header: { Text("Haru’s conversation") }
-                footer: { Text("Use the same Chat screen and avatar. Switching to this iPhone copies the complete text exchanges currently on screen. Everyday replies run locally. Every turn routes automatically: quick conversation stays on the phone; research, iPhone tools and harder reasoning go through Haru’s server. A handoff sends your request and up to six recent messages; saved notes stay on the phone. Handoffs use server history and memory. Calls and read-aloud also use the server.") }
+                footer: { Text("Use the same Chat screen and avatar. Quick conversation stays on the phone. For harder tasks, Haru can speak while the server checks your original request, then puts the result into her own words locally. Personality, local history and notes stay on the phone. The task service supports weather, public research and analysis. iPhone actions and attachments are not connected to this route yet. Her custom spoken voice and full calls still use the server.") }
             Section {
                 Picker("Local model", selection: Binding(get: { local.model }, set: { model in
                     Task { await local.chooseModel(model) }
@@ -54,13 +59,18 @@ struct LocalModelSettingsView: View {
             }
             Section("How Haru should talk") {
                 TextEditor(text: $instructions).frame(minHeight: 140).accessibilityLabel("Local personality instructions")
+                if session.signedIn == true {
+                    Button("Copy Haru’s current personality") {
+                        Task { await local.syncPersonality(); instructions = local.archive.instructions }
+                    }.disabled(local.unavailable)
+                }
                 Button("Restore default personality") { instructions = DolphinModel.defaultInstructions; saved = false }
             }
             Section {
                 TextEditor(text: $notes).frame(minHeight: 110).accessibilityLabel("Local background notes")
                 if session.signedIn == true { Button("Choose server memories…") { memories = true } }
             } header: { Text("Notes to remember locally") }
-                footer: { Text("The local model reads these notes and recent complete exchanges. Local replies do not update server memory unless shared as context during a handoff. Keep notes short so there is room for conversation.") }
+                footer: { Text("The local model reads these notes and recent complete exchanges. Local replies do not update server memory. Task requests contain only your current question. Keep notes short so there is room for conversation.") }
             Section {
                 Button(saved ? "Settings saved" : "Save conversation settings") {
                     local.problem = nil
@@ -75,7 +85,7 @@ struct LocalModelSettingsView: View {
                 if let metrics = local.metrics {
                     Text(String(format: "Last local text reply: first text %.1f s · total %.1f s", metrics.firstTextSeconds ?? 0, metrics.totalSeconds))
                         .font(.footnote)
-                    Text("Text generation only, including model loading when needed. Not call latency. Older messages outside context: \(metrics.omittedMessages).").font(.caption)
+                    Text("Most recent native generation only; a task turn may include a separate opening and server wait. Excludes speech and microphone time. Older messages outside context: \(metrics.omittedMessages).").font(.caption)
                 }
             }
             Section("Model and runtime") {

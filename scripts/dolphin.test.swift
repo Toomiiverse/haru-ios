@@ -143,7 +143,8 @@ import CryptoKit
             check(id == originalID, "explicit retry reuses request ID, preventing effect replay")
             return LocalTaskResult(requestId: id, status: "unknown", answer: "Unknown; not replayed.", route: "core")
         }
-        // Retry requires installed weights in production; send cancellation independently here.
+        store.retry(); await settle(store)
+        check(store.archive.messages.last?.taskResult?.status == "unknown", "explicit retry retrieves unknown result without inventing completion")
         store.generate = nil
         store.serverTask = { _, _ in try await Task.sleep(for: .seconds(60)); throw CancellationError() }
         _ = store.send("Cancel this", viaServer: true)

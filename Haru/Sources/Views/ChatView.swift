@@ -125,7 +125,10 @@ struct ChatView: View {
         .onChange(of: nav.wantsTalk, initial: true) { _, wanted in
             guard wanted else { return }
             nav.wantsTalk = false
-            if !chat.micOn, session.signedIn == true { Task { await local.releaseMemory(); await chat.toggleMic() } }
+            if local.selected, !local.unavailable, local.download.ready {
+                _ = chat.tapToHush()
+                Task { await localSpeech.start { text in if !local.send(text) { draft = text } } }
+            } else if !chat.micOn, session.signedIn == true { Task { await chat.toggleMic() } }
         }
         // haru://call — the Call Haru shortcut, a Vocal Shortcut: straight into a call.
         .onChange(of: nav.wantsCall, initial: true) { _, wanted in
