@@ -34,7 +34,6 @@ struct ChatView: View {
     @State private var stageTall = true
     /// Typing: she peeks over the transcript while the plate makes room.
     @State private var compact = false
-    @State private var composerTop: CGFloat = 0
     /// The status bar and title, which the stage now runs up behind.
     @State private var topInset: CGFloat = 0
     /// Where things stand with her, for the plate across the seam.
@@ -51,17 +50,14 @@ struct ChatView: View {
             GeometryReader { geo in
                 ZStack(alignment: .top) {
                     VStack(spacing: 0) {
-                        Color.clear.frame(height: visibleStageHeight + topInset)
+                        // Reserve her overhang outside the scrolling message content.
+                        Color.clear.frame(height: canvasHeight)
                         transcript
                         composer
-                            .onGeometryChange(for: CGFloat.self) { proxy in
-                                proxy.frame(in: .named("chat-stage")).minY
-                            } action: { composerTop = $0 }
                     }
                     // Keep one web view alive as the keyboard changes the available space.
                     stageView
                 }
-                .coordinateSpace(name: "chat-stage")
                 // Her stage runs up behind the status bar and the title, so
                 // the top of the screen is her ground, not a bar over it.
                 .ignoresSafeArea(edges: .top)
@@ -161,6 +157,7 @@ struct ChatView: View {
         StageWebView(stage: chat.stage, client: session.client)
             .frame(height: canvasHeight)
             .frame(maxWidth: .infinity)
+            .clipped()
             .allowsHitTesting(false)
             .overlay(alignment: .top) {
                 // Only her hit area intercepts touches; the transparent canvas lets chat scroll.
@@ -219,7 +216,6 @@ struct ChatView: View {
             .onChange(of: topInset) { _, _ in frameStage() }
             .onChange(of: stageTall) { _, _ in frameStage() }
             .onChange(of: compact) { _, _ in frameStage() }
-            .onChange(of: composerTop) { _, _ in frameStage() }
             .onChange(of: chat.stage.state) { _, now in
                 if case .alive = now { frameStage() }
             }
@@ -228,7 +224,8 @@ struct ChatView: View {
     /// The part of the stage below the title.
     private var visibleStageHeight: CGFloat { compact ? 160 : stageTall ? 260 : 130 }
     private var panelHeight: CGFloat { visibleStageHeight + topInset }
-    private var canvasHeight: CGFloat { composerTop > 0 ? composerTop : panelHeight }
+    // The panel edge is permeable; the message viewport is not.
+    private var canvasHeight: CGFloat { panelHeight + (compact ? 64 : 0) }
     private var avatarHeight: CGFloat { compact ? 220 : panelHeight }
     // Most of her stays inside the panel; the forward pose projects across its lower edge.
     private var avatarTop: CGFloat { compact ? max(topInset, panelHeight - avatarHeight * 0.68) : 0 }
@@ -298,9 +295,10 @@ struct ChatView: View {
                     Color.clear.frame(height: 1).id("end")
                 }
                 .padding(.horizontal, 12)
-                .padding(.top, compact ? 52 : 44)
+                .padding(.top, compact ? 8 : 44)
                 .padding(.bottom, 8)
             }
+            .clipped()
             .background(
                 LinearGradient(stops: [
                     .init(color: Color("LaunchBackground"), location: 0),

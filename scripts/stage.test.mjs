@@ -36,7 +36,10 @@ test('native keyboard peek stays readable, tracks typing and restores the latest
   const swift=fs.readFileSync('Haru/Sources/Views/ChatView.swift','utf8');
   assert.match(swift,/scale: 1, peek: compact/);assert.ok(!swift.includes('scale: compact ? 0.5'));
   assert.ok(!swift.includes('stageView.offset'),'the stage remains anchored above the transcript');
-  assert.match(swift,/Color\.clear\.frame\(height: visibleStageHeight \+ topInset\)/);
+  assert.match(swift,/Color\.clear\.frame\(height: canvasHeight\)\s*transcript\s*composer/,'peek space stays outside the scrolling transcript');
+  assert.match(swift,/canvasHeight: CGFloat \{ panelHeight \+ \(compact \? 64 : 0\) \}/);
+  assert.match(swift,/StageWebView\(stage:[\s\S]*?\.frame\(height: canvasHeight\)\s*\.frame\(maxWidth: \.infinity\)\s*\.clipped\(\)/,'avatar rendering ends where the message viewport begins');
+  assert.ok(!swift.includes('composerTop'),'keyboard geometry must not enlarge the avatar canvas across messages');
   assert.match(swift,/panelHeight - avatarHeight \* 0\.68/);
   assert.ok(!swift.includes('canvasHeight - avatarHeight'),'the keyboard must not pull Haru down into the transcript');
   assert.match(swift,/avatarHeight: CGFloat \{ compact \? 220 : panelHeight/);
