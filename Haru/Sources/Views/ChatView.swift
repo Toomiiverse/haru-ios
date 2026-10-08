@@ -222,13 +222,13 @@ struct ChatView: View {
     }
 
     /// The part of the stage below the title.
-    private var visibleStageHeight: CGFloat { compact ? 160 : stageTall ? 260 : 130 }
+    private var visibleStageHeight: CGFloat { compact ? 112 : stageTall ? 260 : 130 }
     private var panelHeight: CGFloat { visibleStageHeight + topInset }
     // The panel edge is permeable; the message viewport is not.
     private var canvasHeight: CGFloat { panelHeight + (compact ? 64 : 0) }
     private var avatarHeight: CGFloat { compact ? 220 : panelHeight }
     // Most of her stays inside the panel; the forward pose projects across its lower edge.
-    private var avatarTop: CGFloat { compact ? max(topInset, panelHeight - avatarHeight * 0.68) : 0 }
+    private var avatarTop: CGFloat { compact ? max(0, panelHeight - avatarHeight * 0.68) : 0 }
     private var stageIsAlive: Bool { if case .alive = chat.stage.state { return true }; return false }
 
     /// The page centres her in the whole stage, part of which is under the
@@ -299,12 +299,14 @@ struct ChatView: View {
                 .padding(.bottom, 8)
             }
             .clipped()
-            .background(
-                LinearGradient(stops: [
-                    .init(color: Color("LaunchBackground"), location: 0),
-                    .init(color: Color(uiColor: .systemBackground), location: 0.4),
-                ], startPoint: .top, endPoint: .bottom)
-            )
+            .mask(alignment: .top) {
+                VStack(spacing: 0) {
+                    LinearGradient(colors: [.clear, .black], startPoint: .top, endPoint: .bottom)
+                        .frame(height: 24)
+                    Color.black
+                }
+            }
+            .background(Color(uiColor: .systemBackground))
             .refreshable { await refreshChat() }
             .defaultScrollAnchor(.bottom)
             .scrollDismissesKeyboard(.interactively)

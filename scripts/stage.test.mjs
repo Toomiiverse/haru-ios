@@ -24,9 +24,9 @@ test('native keyboard peek stays readable, tracks typing and restores the latest
   api.tap();assert.deepEqual(calls.at(-1),['tap']);
   api.frame(1,0,1,false);assert.deepEqual(calls.at(-2),['express','happy']);assert.equal(classes.get('peek'),false);
   c.window.haruNative.ready();assert.deepEqual(calls.at(-2),['express','happy']);
-  api.layout(204,54.4,220);
-  assert.equal(styles.get('--panel-height'),'204px');
-  assert.equal(styles.get('--avatar-top'),'54.4px');
+  api.layout(156,6.4,220);
+  assert.equal(styles.get('--panel-height'),'156px');
+  assert.equal(styles.get('--avatar-top'),'6.4px');
   assert.equal(styles.get('--avatar-height'),'220px');
   api.layout(304,0,304);
   assert.equal(styles.get('--avatar-top'),'0px','closing the keyboard restores her home');
@@ -41,6 +41,8 @@ test('native keyboard peek stays readable, tracks typing and restores the latest
   assert.match(swift,/StageWebView\(stage:[\s\S]*?\.frame\(height: canvasHeight\)\s*\.frame\(maxWidth: \.infinity\)\s*\.clipped\(\)/,'avatar rendering ends where the message viewport begins');
   assert.ok(!swift.includes('composerTop'),'keyboard geometry must not enlarge the avatar canvas across messages');
   assert.match(swift,/panelHeight - avatarHeight \* 0\.68/);
+  assert.match(swift,/visibleStageHeight: CGFloat \{ compact \? 112/);
+  assert.match(swift,/compact \? max\(0, panelHeight - avatarHeight/,'shorter panel moves Haru up instead of cropping her below the header');
   assert.ok(!swift.includes('canvasHeight - avatarHeight'),'the keyboard must not pull Haru down into the transcript');
   assert.match(swift,/avatarHeight: CGFloat \{ compact \? 220 : panelHeight/);
   assert.ok(!swift.includes('.offset(y: panelHeight - 32)'),'the panel fade must not paint over Haru');
