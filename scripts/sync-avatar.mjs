@@ -87,7 +87,7 @@ ${css}
 #stage { padding:0; position:absolute; inset:0; }
 /* Keep a readable head above the transcript instead of scaling it twice. */
 #scene.peek #her { transform:none !important; }
-#scene.peek #stage { top:auto; height:280px; bottom:-42px; }
+#scene.peek #stage { top:auto; height:240px; bottom:-50px; }
 #scene.peek .svg-avatar-canvas { align-items:flex-end; }
 @media(prefers-reduced-motion:reduce){#her{transition:none;}}
 /* Quiet background sparks stay separate from her responsive light. */
@@ -108,8 +108,9 @@ ${css}
   // avatar. Zoom scales her box; lift moves her up by a share of the stage.
   let framing = { zoom: 1, lift: 0, scale: 1 };
   let face = 'neutral';
-  const native = window.haruNative = { mouth: 0, speakingUntil: 0, peek: false };
-  const present = () => { const a = window.haruAvatar; if (!a) return; a.express(native.peek ? 'attentive' : face); a.attend(native.peek ? 'typing' : 'here', native.peek ? 3600000 : 450); };
+  const native = window.haruNative = { mouth: 0, speakingUntil: 0, peek: false, attachment: false };
+  let attachmentTimer;
+  const present = () => { const a = window.haruAvatar; if (!a) return; a.express(native.attachment ? 'curious' : native.peek ? 'attentive' : face); a.attend(native.attachment ? 'attachment' : native.peek ? 'typing' : 'here', native.peek ? 3600000 : 450); };
   native.ready = present;
   const applyFraming = () => {
     const scene = document.getElementById('scene');
@@ -123,9 +124,15 @@ ${css}
   };
   const speaking = (ms) => { native.speakingUntil = performance.now() + ms; };
   window.haruStage = {
-    express: (name) => { if (name) face = name; const a = window.haruAvatar; if (a && !native.peek) a.express(face); },
+    express: (name) => { if (name) face = name; const a = window.haruAvatar; if (a && !native.peek && !native.attachment) a.express(face); },
     attend: (why, ms) => {
       const a = window.haruAvatar;
+      if (why === 'attachment') {
+        clearTimeout(attachmentTimer); native.attachment = true; present();
+        attachmentTimer = setTimeout(() => { native.attachment = false; present(); }, clamp(Number(ms) || 4200, 500, 8000));
+        return;
+      }
+      if (why === 'typing' && native.attachment) { clearTimeout(attachmentTimer); native.attachment = false; present(); }
       if (why === 'talking') speaking(ms === undefined ? 1500 : Number(ms) || 0);
       if (!a) return;
       if (why === 'thinking') a.think();
