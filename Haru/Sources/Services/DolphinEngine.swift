@@ -21,6 +21,7 @@ final class DolphinEngine: @unchecked Sendable {
     private let queue = DispatchQueue(label: "haru.dolphin.inference", qos: .userInitiated)
     private var handle: UnsafeMutableRawPointer?
     private var loadedContext = 0
+    private var loadedModel: URL?
     private let gpu: Bool
 
     init(gpu: Bool = true) { self.gpu = gpu }
@@ -29,21 +30,21 @@ final class DolphinEngine: @unchecked Sendable {
         await withCheckedContinuation { continuation in
             queue.async {
                 haru_llama_close(self.handle)
-                self.handle = nil; self.loadedContext = 0
+                self.handle = nil; self.loadedContext = 0; self.loadedModel = nil
                 continuation.resume()
             }
         }
     }
 
     func reply(model: URL, archive: LocalConversationArchive, cancellation: DolphinCancellation,
-               maxTokens: Int = 256) -> AsyncThrowingStream<DolphinEvent, Error> {
+               maxTokens: Int = 256, descriptor: LocalModel = .dolphin) -> AsyncThrowingStream<DolphinEvent, Error> {
         AsyncThrowingStream { continuation in
             continuation.onTermination = { @Sendable _ in cancellation.cancel() }
             queue.async { [self] in
                 let start = ProcessInfo.processInfo.systemUptime
                 do {
                     if cancellation.isCancelled { throw CancellationError() }
-                    let cold = handle == nil || loadedContext != archive.contextSize
+                    let cold = handle == nil || loadedContext != archive.contextSize || loadedModel != model
                     if cold {
                         haru_llama_close(handle); handle = nil
                         continuation.yield(.loading)
@@ -52,15 +53,15 @@ final class DolphinEngine: @unchecked Sendable {
                         }
                         guard handle != nil else {
                             if cancellation.isCancelled { throw CancellationError() }
-                            throw LocalChatError.message("Dolphin could not load. Close other heavy apps and try again with 1,024 context tokens. If it still fails, remove and download the model again.")
+                            throw LocalChatError.message("The local model could not load. Close other heavy apps and try again with 1,024 context tokens. If it still fails, remove and download the model again.")
                         }
-                        loadedContext = archive.contextSize
+                        loadedContext = archive.contextSize; loadedModel = model
                     }
                     guard let handle else { throw LocalChatError.message("The local model is unavailable.") }
                     let prompt = try LocalPrompt.build(instructions: archive.instructions, notes: archive.notes,
-                        messages: archive.messages, contextSize: archive.contextSize, outputTokens: maxTokens) { text in
+                        messages: archive.messages, contextSize: archive.contextSize, outputTokens: maxTokens, model: descriptor) { text in
                             let count = text.withCString { haru_llama_count(handle, $0) }
-                            guard count > 0 else { throw LocalChatError.message("Dolphin could not read the prompt.") }
+                            guard count > 0 else { throw LocalChatError.message("The local model could not read the prompt.") }
                             return Int(count)
                         }
                     if cancellation.isCancelled { throw CancellationError() }
@@ -76,7 +77,7 @@ final class DolphinEngine: @unchecked Sendable {
                         }, opaque, &generated)
                     }
                     if cancellation.isCancelled || status == 2 { throw CancellationError() }
-                    guard status >= 0 else { throw LocalChatError.message("Dolphin stopped because inference failed (\(status)). Try a shorter context or reload the model.") }
+                    guard status >= 0 else { throw LocalChatError.message("The local model stopped because inference failed (\(status)). Try a shorter context or reload the model.") }
                     let final = sink.buffer.finish()
                     continuation.yield(.text(final))
                     let end = ProcessInfo.processInfo.systemUptime

@@ -12,26 +12,23 @@ struct ConversationView: View {
 
     var body: some View {
         VStack(spacing: 0) {
-            Picker("Conversation mode", selection: Binding(
-                get: { local.selected ? "local" : roleplay.state?.mode ?? "ai" },
+            if !local.selected { Picker("Conversation mode", selection: Binding(
+                get: { roleplay.state?.mode ?? "ai" },
                 set: { mode in
-                    local.selected = mode == "local"
-                    if mode == "local" { return }
                     if mode == "character", roleplay.state?.character == nil { chooseCharacter = true }
                     else { Task { _ = await roleplay.mode(mode, session.client) } }
                 }
             )) {
                 Text("AI").tag("ai")
                 Text("Character").tag("character")
-                Text("On iPhone").tag("local")
             }
             .pickerStyle(.segmented)
             .padding(.horizontal, 16)
             .padding(.vertical, 8)
             .disabled(roleplay.waiting || chat.busy || chat.call != nil || chat.micOn || local.unavailable)
-            .accessibilityHint("Choose server AI, a character, or Dolphin on this iPhone")
-            if local.selected { LocalConversationView() }
-            else if roleplay.state?.mode == "character" {
+            .accessibilityHint("Choose Haru or a character")
+            }
+            if !local.selected && roleplay.state?.mode == "character" {
                 CharacterChatView(store: roleplay, chooseCharacter: $chooseCharacter)
             } else { ChatView() }
         }

@@ -54,9 +54,17 @@ struct HaruApp: App {
                 .environment(locator)
                 .environment(local)
                 .environment(Navigator.shared)
+                .onAppear {
+                    local.serverTask = { text, id in try await chat.taskForLocalConversation(text, requestID: id) }
+                    local.speak = { text in if session.signedIn == true { chat.say(text, emotion: nil) } }
+                    local.loadPersonality = {
+                        struct Profile: Decodable { let version: Int; let instructions: String }
+                        let profile: Profile = try await session.client.post("/api/local/profile")
+                        guard profile.version == 1 else { throw LocalChatError.message("Unsupported local profile version.") }
+                        return profile.instructions
+                    }
+                }
                 .onOpenURL { Navigator.shared.open($0) }
-                .onChange(of: Navigator.shared.wantsCall) { _, wanted in if wanted { local.selected = false } }
-                .onChange(of: Navigator.shared.wantsTalk) { _, wanted in if wanted { local.selected = false } }
                 .onReceive(NotificationCenter.default.publisher(for: UIApplication.didReceiveMemoryWarningNotification)) { _ in
                     Task { await local.releaseMemory() }
                 }
@@ -79,10 +87,9 @@ struct HaruApp: App {
     private func takeAsk() {
         switch Shared.takeAsk() {
         case .call?:
-            local.selected = false
             Navigator.shared.tab = .chat
             Navigator.shared.wantsCall = true
-        case .standbyOn?: local.selected = false; Task { await chat.setStandby(true) }
+        case .standbyOn?: Task { await local.releaseMemory(); await chat.setStandby(true) }
         case .standbyOff?: Task { await chat.setStandby(false) }
         case .hangUp?: chat.endCall()
         case nil: break
