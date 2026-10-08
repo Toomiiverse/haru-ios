@@ -69,29 +69,33 @@ html, body { margin:0; height:100%; overflow:hidden; -webkit-user-select:none; -
 /* Lit like the page: the same ground and the same glow she sits in. */
 body {
   position:relative; display:flex; align-items:center; justify-content:center;
+}
+#backdrop {
+  position:absolute; inset:0 0 auto; height:var(--panel-height,0px); pointer-events:none;
   background:var(--bg);
   background-image:
     radial-gradient(120% 70% at 50% -10%, oklch(42% 0.12 var(--hue) / 0.55), transparent 60%),
     radial-gradient(90% 50% at 100% 100%, oklch(38% 0.10 calc(var(--hue) + 60) / 0.35), transparent 70%);
 }
 ${css}
+body { background:transparent !important; }
 /* Her box is a share of the shorter side; BASE makes her read large at the
    app's default zoom, the More sliders still scale from there. */
 #scene { position:relative; width:100%; height:100%; --base:0.88; --scene-size:calc(min(100vw, 100vh) * var(--base)); }
 /* Her and her aura together: this is what the app's zoom and lift move, so
    the field behind stays put and edge to edge. */
-#her { position:absolute; inset:0; display:flex; align-items:center; justify-content:center; transition:transform .3s ease; }
+#her { position:absolute; inset:var(--avatar-top,0px) 0 auto; height:var(--avatar-height,260px); display:flex; align-items:center; justify-content:center; transition:top .35s ease,height .35s ease,transform .3s ease; }
 /* The page's own stylesheet sizes #stage for the phone page (a third of the
    width); here the stage is hers alone, so #stage takes the scene's size —
    set after the page's rules, which is what makes it win. */
 #stage { padding:0; position:absolute; inset:0; }
-/* Fit her entire head below the title while the keyboard is open. */
+/* Her pose can leave the background panel without moving that panel. */
 #scene.peek #her { transform:none !important; }
-#scene.peek #stage { top:auto; height:160px; bottom:0; }
 #scene.peek .svg-avatar-canvas { align-items:center; }
+#stage .svg-avatar-canvas { overflow:visible; }
 @media(prefers-reduced-motion:reduce){#her{transition:none;}}
 /* Quiet background sparks stay separate from her responsive light. */
-#field { position:absolute; inset:0; overflow:hidden; pointer-events:none; --lift:1; }
+#field { position:absolute; inset:0 0 auto; height:var(--panel-height,0px); overflow:hidden; pointer-events:none; --lift:1; }
 #field i { position:absolute; display:block; border-radius:50%; }
 #field .spark { left:var(--x); top:var(--y); width:var(--s); height:var(--s); background:oklch(94% 0.06 var(--hue)); box-shadow:0 0 6px 1px oklch(86% 0.12 var(--hue) / 0.7); opacity:0; animation:twinkle var(--d) ease-in-out infinite; animation-delay:var(--t); }
 @keyframes twinkle { 0% { opacity:0; transform:translateY(0) scale(.6); } 35% { opacity:calc(var(--o) * var(--lift)); transform:translateY(calc(var(--r) * -.4)) scale(1); } 70% { opacity:calc(var(--o) * .7 * var(--lift)); } 100% { opacity:0; transform:translateY(calc(var(--r) * -1)) scale(.5); } }
@@ -103,7 +107,7 @@ ${css}
 #stage .svg-avatar-canvas .avatar-rest::before { filter:none; will-change:auto;
   background:radial-gradient(ellipse closest-side at 50% 56%,rgb(255 172 205 / .38) 0%,rgb(239 148 207 / .22) 25%,rgb(185 154 255 / .09) 48%,rgb(185 154 255 / .025) 68%,rgb(185 154 255 / 0) 90%); }
 </style>
-<div id="scene"><div id="field">${field}</div><div id="her"><section id="stage"></section></div></div>
+<div id="scene"><div id="backdrop"></div><div id="field">${field}</div><div id="her"><section id="stage"></section></div></div>
 <script>
 (() => {
   const tell = (message) => { try { window.webkit.messageHandlers.stage.postMessage(message); } catch (e) {} };
@@ -146,6 +150,13 @@ ${css}
     },
     mouth: (level) => { native.mouth = clamp(Number(level) || 0, 0, 1); native.speakingUntil = performance.now() + 450; },
     tap: () => window.haruAvatar?.tap(),
+    layout: (panelHeight, avatarTop, avatarHeight) => {
+      const scene = document.getElementById('scene');
+      const pixels = (value) => Math.max(0, Number(value) || 0) + 'px';
+      scene.style.setProperty('--panel-height', pixels(panelHeight));
+      scene.style.setProperty('--avatar-top', pixels(avatarTop));
+      scene.style.setProperty('--avatar-height', pixels(avatarHeight));
+    },
     motion: () => {},
     frame: (zoom, lift, scale, peek) => { const changed = native.peek !== !!peek; native.peek = !!peek; framing = { zoom: clamp(Number(zoom) || 1, 0.5, 3), lift: clamp(Number(lift) || 0, -1, 1), scale: clamp(Number(scale) || 1, 0.2, 1) }; applyFraming(); if (changed) present(); },
   };

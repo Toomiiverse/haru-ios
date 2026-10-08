@@ -123,6 +123,11 @@ final class Stage: NSObject, WKNavigationDelegate {
         run("window.haruStage.frame(\(String(format: "%.3f", zoom)), \(String(format: "%.3f", lift)), \(String(format: "%.3f", scale)), \(peek ? "true" : "false"))", preserving: "frame")
     }
 
+    /// The stationary background and Haru's independent movement area, in points.
+    func layout(panelHeight: Double, avatarTop: Double, avatarHeight: Double) {
+        run("window.haruStage.layout(\(panelHeight), \(avatarTop), \(avatarHeight))", preserving: "layout")
+    }
+
     /// How far and how often she looks about: 0 still, 1 lively.
     func motion(_ amount: Double) {
         run("window.haruStage.motion(\(String(format: "%.3f", amount)))", preserving: "motion")
@@ -155,7 +160,7 @@ final class Stage: NSObject, WKNavigationDelegate {
             let wasReady = recovery.ready
             recovery.alive(at: Date.timeIntervalSinceReferenceDate)
             if !wasReady {
-                for key in ["expression", "frame", "motion"] {
+                for key in ["expression", "layout", "frame", "motion"] {
                     if let js = displayState[key] { source.evaluateJavaScript(js) }
                 }
             }

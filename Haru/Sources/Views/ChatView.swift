@@ -34,6 +34,7 @@ struct ChatView: View {
     @State private var stageTall = true
     /// Typing: she peeks over the transcript while the plate makes room.
     @State private var compact = false
+    @State private var composerTop: CGFloat = 0
     /// The status bar and title, which the stage now runs up behind.
     @State private var topInset: CGFloat = 0
     /// Where things stand with her, for the plate across the seam.
@@ -53,10 +54,14 @@ struct ChatView: View {
                         Color.clear.frame(height: visibleStageHeight + topInset)
                         transcript
                         composer
+                            .onGeometryChange(for: CGFloat.self) { proxy in
+                                proxy.frame(in: .named("chat-stage")).minY
+                            } action: { composerTop = $0 }
                     }
                     // Keep one web view alive as the keyboard changes the available space.
                     stageView
                 }
+                .coordinateSpace(name: "chat-stage")
                 // Her stage runs up behind the status bar and the title, so
                 // the top of the screen is her ground, not a bar over it.
                 .ignoresSafeArea(edges: .top)
@@ -110,7 +115,7 @@ struct ChatView: View {
             nav.wantsCall = false
             if chat.call == nil { Task { await chat.holdMic() } }
         }
-        // Typing changes her pose while her panel stays above the transcript.
+        // Her background stays above the transcript; only Haru approaches the composer.
         // Picking a line to answer is the start of typing the answer.
         .onChange(of: chat.replyingTo?.id) { _, id in
             if id != nil { typing = true }
@@ -154,29 +159,47 @@ struct ChatView: View {
 
     private var stageView: some View {
         StageWebView(stage: chat.stage, client: session.client)
-            .frame(height: visibleStageHeight + topInset)
+            .frame(height: canvasHeight)
             .frame(maxWidth: .infinity)
-            .background(Color("LaunchBackground"))
+            .allowsHitTesting(false)
+            .overlay(alignment: .top) {
+                // Only her hit area intercepts touches; the transparent canvas lets chat scroll.
+                Color.clear
+                    .frame(width: compact ? 190 : nil, height: compact ? 190 : panelHeight)
+                    .contentShape(Rectangle())
+                    .onTapGesture {
+                        let hushed = chat.tapToHush()
+                        chat.stage.tap()
+                        if hushed { return }
+                        if !compact { withAnimation(.easeInOut(duration: 0.25)) { stageTall.toggle() } }
+                    }
+                    .onLongPressGesture { chat.stage.reload() }
+                    .offset(y: compact ? avatarTop + (avatarHeight - 190) / 2 : 0)
+                    .allowsHitTesting(stageIsAlive)
+            }
             // Her ground dissolves into the talk rather than stopping at a line.
-            .overlay(alignment: .bottom) {
+            .overlay(alignment: .top) {
                 LinearGradient(stops: [
                     .init(color: .clear, location: 0),
                     .init(color: Color("LaunchBackground").opacity(0.6), location: 0.65),
                     .init(color: Color("LaunchBackground"), location: 1),
                 ], startPoint: .top, endPoint: .bottom)
-                .frame(height: compact ? 16 : 56)
+                .frame(height: 32)
+                .offset(y: panelHeight - 32)
                 .allowsHitTesting(false)
             }
-            .overlay(alignment: .bottom) {
+            .overlay(alignment: .top) {
                 if !compact {
                     Nameplate(standing: standing, emotion: standing?.emotion ?? chat.emotion) { nav.tab = .status }
                         .padding(.horizontal, 16)
+                        .frame(height: panelHeight, alignment: .bottom)
                         .offset(y: 28)
                         .transition(.opacity.combined(with: .move(edge: .top)))
                 }
             }
             .zIndex(1)
-            .overlay(alignment: .bottom) {
+            .overlay(alignment: .top) {
+                Group {
                 switch chat.stage.state {
                 case .loading(let what):
                     HStack(spacing: 8) {
@@ -198,29 +221,28 @@ struct ChatView: View {
                 case .alive:
                     EmptyView()
                 }
+                }
+                .frame(height: panelHeight)
             }
-            .contentShape(Rectangle())
-            // Tapped mid-line, she stops talking; quiet, the tap sizes her stage as before.
-            .onTapGesture {
-                let hushed = chat.tapToHush()
-                chat.stage.tap()
-                if hushed { return }
-                if !compact { withAnimation(.easeInOut(duration: 0.25)) { stageTall.toggle() } }
-            }
-            .onLongPressGesture { chat.stage.reload() }
             .onAppear { frameStage(); chat.stage.recoverIfNeeded() }
             .onChange(of: stageZoom) { _, _ in frameStage() }
             .onChange(of: stageLift) { _, _ in frameStage() }
             .onChange(of: topInset) { _, _ in frameStage() }
             .onChange(of: stageTall) { _, _ in frameStage() }
             .onChange(of: compact) { _, _ in frameStage() }
+            .onChange(of: composerTop) { _, _ in frameStage() }
             .onChange(of: chat.stage.state) { _, now in
                 if case .alive = now { frameStage() }
             }
     }
 
     /// The part of the stage below the title.
-    private var visibleStageHeight: CGFloat { compact ? 160 : stageTall ? 260 : 130 }
+    private var visibleStageHeight: CGFloat { compact ? 112 : stageTall ? 260 : 130 }
+    private var panelHeight: CGFloat { visibleStageHeight + topInset }
+    private var canvasHeight: CGFloat { composerTop > 0 ? composerTop : panelHeight }
+    private var avatarHeight: CGFloat { compact ? min(220, canvasHeight) : panelHeight }
+    private var avatarTop: CGFloat { compact ? max(0, canvasHeight - avatarHeight) : 0 }
+    private var stageIsAlive: Bool { if case .alive = chat.stage.state { return true }; return false }
 
     /// The page centres her in the whole stage, part of which is under the
     /// title; the lift moves her down by a little over half the covered inset
@@ -239,6 +261,7 @@ struct ChatView: View {
     }
 
     private func frameStage() {
+        chat.stage.layout(panelHeight: panelHeight, avatarTop: avatarTop, avatarHeight: avatarHeight)
         let total = visibleStageHeight + topInset
         let under = total > 0 ? (topInset * 0.55) / total : 0
         // Compact: her head peeks over the transcript at a readable size.
