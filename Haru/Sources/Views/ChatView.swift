@@ -95,6 +95,7 @@ struct ChatView: View {
         }
         .onChange(of: phase) { _, now in
             guard now == .active else { return }
+            chat.stage.recoverIfNeeded()
             Task {
                 // Re-read the day unless she is mid-answer, when the stream on
                 // screen is newer than anything the server would hand back.
@@ -190,12 +191,16 @@ struct ChatView: View {
                     }
                     .padding(.bottom, 64)
                 case .failed(let why):
-                    Text("She is not moving — \(why).")
-                        .font(.footnote)
-                        .foregroundStyle(.secondary)
-                        .multilineTextAlignment(.center)
-                        .padding(.horizontal, 16)
-                        .padding(.bottom, 64)
+                    VStack(spacing: 8) {
+                        Text("She is not moving — \(why).")
+                            .font(.footnote)
+                            .foregroundStyle(.secondary)
+                            .multilineTextAlignment(.center)
+                        Button("Reload Haru") { chat.stage.reload() }
+                            .buttonStyle(.bordered)
+                    }
+                    .padding(.horizontal, 16)
+                    .padding(.bottom, 64)
                 case .alive:
                     EmptyView()
                 }
@@ -209,7 +214,7 @@ struct ChatView: View {
                 if !compact { withAnimation(.easeInOut(duration: 0.25)) { stageTall.toggle() } }
             }
             .onLongPressGesture { chat.stage.reload() }
-            .onAppear { frameStage() }
+            .onAppear { frameStage(); chat.stage.recoverIfNeeded() }
             .onChange(of: stageZoom) { _, _ in frameStage() }
             .onChange(of: stageLift) { _, _ in frameStage() }
             .onChange(of: topInset) { _, _ in frameStage() }

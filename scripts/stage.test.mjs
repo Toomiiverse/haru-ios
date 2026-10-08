@@ -42,3 +42,11 @@ test('the bundled stage uses shared hair, sleep, speech and depth rendering',()=
   assert.ok(!html.includes('id="aura"'));
   assert.ok(!html.includes('<i class="floor">'));
 });
+
+test('every expression is packaged with the stage so startup does not need the server',()=>{
+  const faces=fs.readdirSync('Haru/Resources/emotions').filter(name=>name.endsWith('.svg'));
+  const count=Number(html.match(/event: 'alive', expressions: (\d+)/)[1]);
+  assert.equal(faces.length,count);
+  for(const name of ['neutral.svg','sleepy.svg','attentive.svg','curious.svg'])assert.ok(faces.includes(name));
+  for(const name of faces)assert.match(fs.readFileSync('Haru/Resources/emotions/'+name,'utf8'),/<svg\b/);
+});

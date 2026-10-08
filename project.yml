@@ -36,6 +36,10 @@ targets:
       - path: Haru/Resources
         excludes:
           - "kws/**"
+          - "emotions/**"
+      - path: Haru/Resources/emotions
+        type: folder
+        buildPhase: resources
       # The "Hey Haru" model (WakeSpotter.swift), put here by scripts/build-ipa.sh:
       # a folder reference, so it lands in the bundle as kws/ with its names.
       - path: Haru/Resources/kws

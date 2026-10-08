@@ -7,9 +7,9 @@
 //   node scripts/sync-avatar.mjs [path/to/haru-desktop]
 //
 // The avatar fetches /emotions/<name>.svg itself; in the app that request
-// goes through haru-stage://, which the app answers from her server.
+// goes through haru-stage://, which the app answers from the bundled face pack.
 import { execFileSync } from 'node:child_process';
-import { mkdtempSync, readFileSync, writeFileSync } from 'node:fs';
+import { mkdtempSync, readFileSync, writeFileSync, mkdirSync, copyFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 import { pathToFileURL } from 'node:url';
@@ -52,7 +52,7 @@ if (!avatar.includes('haruAvatar')) throw new Error('the avatar script does not 
 function seeded(seed) { let x = seed >>> 0; return () => { x = (x * 1664525 + 1013904223) >>> 0; return x / 4294967296; }; }
 const rand = seeded(HUE * 7919 + 1);
 const pct = (v) => (v * 100).toFixed(1) + '%';
-const sparks = Array.from({ length: 30 }, () => {
+const sparks = Array.from({ length: 12 }, () => {
   const style = `--x:${pct(rand())};--y:${pct(0.15 + rand() * 0.85)};--s:${(1 + rand() * 2.2).toFixed(1)}px;--d:${(6 + rand() * 9).toFixed(1)}s;--t:${(-rand() * 14).toFixed(1)}s;--o:${(0.25 + rand() * 0.55).toFixed(2)};--r:${(10 + rand() * 26).toFixed(0)}px`;
   return `<i class="spark" style="${style}"></i>`;
 }).join('');
@@ -92,11 +92,16 @@ ${css}
 @media(prefers-reduced-motion:reduce){#her{transition:none;}}
 /* Quiet background sparks stay separate from her responsive light. */
 #field { position:absolute; inset:0; overflow:hidden; pointer-events:none; --lift:1; }
-#field i { position:absolute; display:block; border-radius:50%; will-change:transform, opacity; }
+#field i { position:absolute; display:block; border-radius:50%; }
 #field .spark { left:var(--x); top:var(--y); width:var(--s); height:var(--s); background:oklch(94% 0.06 var(--hue)); box-shadow:0 0 6px 1px oklch(86% 0.12 var(--hue) / 0.7); opacity:0; animation:twinkle var(--d) ease-in-out infinite; animation-delay:var(--t); }
 @keyframes twinkle { 0% { opacity:0; transform:translateY(0) scale(.6); } 35% { opacity:calc(var(--o) * var(--lift)); transform:translateY(calc(var(--r) * -.4)) scale(1); } 70% { opacity:calc(var(--o) * .7 * var(--lift)); } 100% { opacity:0; transform:translateY(calc(var(--r) * -1)) scale(.5); } }
 @media (prefers-reduced-motion: reduce) { #field .spark { animation:none !important; opacity:calc(var(--o) * .6); } }
 /* Her shared renderer owns the moving, breathing, audio-reactive halo. */
+/* Avoid repainting nested filtered SVG surfaces in iOS WebKit. The feathered
+   gradient still follows the renderer's breath, movement and speech envelope. */
+#stage .svg-avatar-canvas #avatar-body { filter:none; }
+#stage .svg-avatar-canvas .avatar-rest::before { filter:none; will-change:auto;
+  background:radial-gradient(ellipse closest-side at 50% 56%,rgb(255 172 205 / .38) 0%,rgb(239 148 207 / .22) 25%,rgb(185 154 255 / .09) 48%,rgb(185 154 255 / .025) 68%,rgb(185 154 255 / 0) 90%); }
 </style>
 <div id="scene"><div id="field">${field}</div><div id="her"><section id="stage"></section></div></div>
 <script>
@@ -162,5 +167,10 @@ ${avatar}
 </script>
 `;
 const out = resolve(new URL('.', import.meta.url).pathname, '../Haru/Resources/stage.html');
+const faces = resolve(out, '../emotions');
+mkdirSync(faces, { recursive: true });
+for (const name of HARU_EMOTIONS) {
+  copyFileSync(resolve(desktop, 'build/emotions', emotionConfig[name].file), resolve(faces, name + '.svg'));
+}
 writeFileSync(out, html);
 console.log(`wrote ${out}: ${html.length} chars, ${HARU_EMOTIONS.length} faces`);
