@@ -106,12 +106,17 @@ targets:
       # sherpa-onnx, fetched by scripts/build-ipa.sh — see WakeSpotter.swift.
       - framework: Vendor/SherpaOnnxC.xcframework
         embed: true
+      - framework: Vendor/llama.xcframework
+        embed: true
+      - sdk: libc++.tbd
     settings:
       base:
         # Apple registered the App ID with the Team ID as a suffix (2026-09-04);
         # the app matches it. The BG task identifier below is unrelated to this.
         PRODUCT_BUNDLE_IDENTIFIER: com.toomiiverse.haru.JF3928RYMD
         PRODUCT_NAME: Haru
+        SWIFT_OBJC_BRIDGING_HEADER: Haru/Sources/Services/DolphinBridge.h
+        CLANG_CXX_LANGUAGE_STANDARD: c++17
         CODE_SIGN_STYLE: Automatic
         CODE_SIGN_ENTITLEMENTS: Haru/Haru.entitlements
         # Set by the signed build from the APPLE_TEAM_ID secret; empty for the unsigned one.

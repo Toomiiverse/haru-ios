@@ -5,6 +5,7 @@ import UniformTypeIdentifiers
 struct ConversationView: View {
     @Environment(Session.self) private var session
     @Environment(ChatStore.self) private var chat
+    @Environment(LocalConversationStore.self) private var local
     @Environment(\.scenePhase) private var phase
     @State private var roleplay = RoleplayStore()
     @State private var chooseCharacter = false
@@ -13,29 +14,33 @@ struct ConversationView: View {
     var body: some View {
         VStack(spacing: 0) {
             Picker("Conversation mode", selection: Binding(
-                get: { roleplay.state?.mode ?? "ai" },
+                get: { local.selected ? "local" : roleplay.state?.mode ?? "ai" },
                 set: { mode in
+                    local.selected = mode == "local"
+                    if mode == "local" { return }
                     if mode == "character", roleplay.state?.character == nil { chooseCharacter = true }
                     else { Task { _ = await roleplay.mode(mode, session.client) } }
                 }
             )) {
                 Text("AI").tag("ai")
                 Text("Character").tag("character")
+                Text("On iPhone").tag("local")
             }
             .pickerStyle(.segmented)
             .padding(.horizontal, 16)
             .padding(.vertical, 8)
-            .disabled(roleplay.state == nil || roleplay.waiting || chat.busy || chat.call != nil || chat.micOn)
-            .accessibilityHint("Switch between Haru and your custom characters")
-            Button("Saved context for Haru") { showReferences = true }.font(.caption).padding(.bottom, 4)
-            if roleplay.state?.mode == "character" {
+            .disabled(roleplay.waiting || chat.busy || chat.call != nil || chat.micOn || local.unavailable)
+            .accessibilityHint("Choose server AI, a character, or Dolphin on this iPhone")
+            if !local.selected { Button("Saved context for Haru") { showReferences = true }.font(.caption).padding(.bottom, 4) }
+            if local.selected { LocalConversationView() }
+            else if roleplay.state?.mode == "character" {
                 CharacterChatView(store: roleplay, chooseCharacter: $chooseCharacter)
             } else { ChatView() }
         }
         .background(Color("LaunchBackground"))
-        .task(id: session.baseURLString) { await roleplay.load(session.client) }
+        .task(id: session.baseURLString) { if !local.selected { await roleplay.load(session.client) } }
         .onChange(of: phase) { _, now in
-            if now == .active { Task { await roleplay.load(session.client) } }
+            if now == .active && !local.selected { Task { await roleplay.load(session.client) } }
         }
         .sheet(isPresented: $chooseCharacter) { CharacterPicker(store: roleplay) }
         .sheet(isPresented: $showReferences) { HaruReferenceLibrary(store: roleplay) }
