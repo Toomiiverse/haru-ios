@@ -213,6 +213,19 @@ struct LocalMessageRow: View {
                     Text(message.state == .interrupted ? "Stopped · partial reply" : "Reply failed")
                         .font(.caption2).foregroundStyle(.orange)
                 }
+                if let result = message.taskResult {
+                    DisclosureGroup("Task result") {
+                        Text(result.answer).font(.callout).textSelection(.enabled)
+                        ForEach(Array(result.sources.enumerated()), id: \.offset) { _, source in
+                            if let url = URL(string: source.url), url.scheme == "https" {
+                                Link(source.title ?? url.host ?? "Source", destination: url).font(.caption)
+                            }
+                        }
+                    }.font(.caption)
+                }
+                if message.text.contains("Apple Weather for"), let legal = PhoneTools.shared.weatherLegal {
+                    Link("Apple Weather attribution", destination: legal).font(.caption)
+                }
                 if message.role == .assistant && message.state != .generating {
                     HStack {
                         if message.id == local.archive.messages.last?.id {

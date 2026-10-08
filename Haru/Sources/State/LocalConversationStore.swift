@@ -8,7 +8,10 @@ final class LocalConversationStore {
     }
     let automaticHandoff = true
     /// Transport supplied by the existing server chat adapter; never a second server policy.
-    var serverReply: ((String) -> AsyncThrowingStream<String, Error>)?
+    var serverTask: ((String, String) async throws -> LocalTaskResult)?
+    var speak: ((String) -> Void)?
+    /// Injectable native generation boundary for deterministic orchestration tests.
+    var generate: ((LocalConversationArchive, DolphinCancellation, Int) -> AsyncThrowingStream<DolphinEvent, Error>)?
     private(set) var archive = LocalConversationArchive()
     private(set) var download: DolphinDownload
     var model: LocalModel { download.model }
@@ -103,7 +106,7 @@ final class LocalConversationStore {
         let previous = archive
         archive.messages.removeLast()
         let request = archive
-        let response = LocalMessage(role: .assistant, text: "", state: .generating)
+        let response = LocalMessage(id: last.id, role: .assistant, text: "", state: .generating)
         archive.messages.append(response)
         do { try save() } catch { archive = previous; problem = error.localizedDescription; return }
         run(request, responseID: response.id, viaServer: request.messages.last.map { LocalHandoff.requiresServer($0.text) } ?? false)
@@ -124,7 +127,8 @@ final class LocalConversationStore {
                     if let i = archive.messages.firstIndex(where: { $0.id == responseID }) {
                         archive.messages[i].source = model.shortName + " · iPhone"
                     }
-                    for try await event in engine.reply(model: download.files.model, archive: prompt, cancellation: cancel, descriptor: model) {
+                    do {
+                    for try await event in reply(prompt, cancel: cancel, limit: 256) {
                         try Task.checkCancellation()
                         guard generationID == id, let i = archive.messages.firstIndex(where: { $0.id == responseID }) else { throw CancellationError() }
                         switch event {
@@ -149,30 +153,19 @@ final class LocalConversationStore {
                         }
                         if handoff { break }
                     }
+                    } catch is LocalChatError {
+                        // Local inference has no tool effects; its inability to answer can hand off once.
+                        try Task.checkCancellation()
+                        handoff = true
+                    }
                 }
                 if handoff {
                     try Task.checkCancellation()
-                    guard let serverReply else { throw LocalChatError.message("The server is unavailable. Everyday local chat still works. This request was not retried.") }
-                    cancellation = nil
-                    await engine.unload()
-                    status = "Handing this task to Haru’s server…"; metrics = nil
-                    guard let i = archive.messages.firstIndex(where: { $0.id == responseID }),
-                          let question = request.messages.last else { throw CancellationError() }
-                    archive.messages[i].text = ""; archive.messages[i].source = "Haru server"
-                    archive.messages[i].state = .generating
-                    try save()
-                    let text = LocalHandoff.serverPrompt(question: question.text, history: Array(request.messages.dropLast()))
-                    for try await text in serverReply(text) {
-                        try Task.checkCancellation()
-                        guard let i = archive.messages.firstIndex(where: { $0.id == responseID }) else { throw CancellationError() }
-                        archive.messages[i].text = text
-                        status = "Replying via Haru’s server…"
-                        if Date().timeIntervalSince(checkpoint) >= 1 { try save(); checkpoint = Date() }
-                    }
-                    try Task.checkCancellation()
-                    if let i = archive.messages.firstIndex(where: { $0.id == responseID }) { archive.messages[i].state = .complete }
-                    status = ""
+                    try await performTask(request, responseID: responseID)
+                } else if let text = archive.messages.first(where: { $0.id == responseID })?.text, !text.isEmpty {
+                    speak?(text)
                 }
+
                 if let i = archive.messages.firstIndex(where: { $0.id == responseID }), archive.messages[i].text.isEmpty {
                     archive.messages[i].state = .failed
                     problem = "No reply was returned. You can retry."
@@ -188,6 +181,80 @@ final class LocalConversationStore {
             do { try save() } catch { problem = "The last reply could not be saved: " + error.localizedDescription }
             if generationID == id { busy = false; cancellation = nil; generation = nil; generationID = nil }
         }
+    }
+
+    private func reply(_ prompt: LocalConversationArchive, cancel: DolphinCancellation, limit: Int) -> AsyncThrowingStream<DolphinEvent, Error> {
+        generate?(prompt, cancel, limit) ?? engine.reply(model: download.files.model, archive: prompt, cancellation: cancel, maxTokens: limit, descriptor: model)
+    }
+
+    private func performTask(_ request: LocalConversationArchive, responseID: String) async throws {
+        guard let serverTask, let question = request.messages.last else {
+            throw LocalChatError.message("The task service is unavailable. Everyday local chat still works.")
+        }
+        status = "Checking your request…"
+        // Start the original request BEFORE native inference. No personality or history is sent.
+        let pending = Task { try await serverTask(question.text, responseID) }
+        defer { pending.cancel() }
+        await Task.yield()
+        var opening = ""
+        if download.ready || generate != nil {
+            let acknowledgement = DolphinCancellation(); cancellation = acknowledgement
+            // A completed server result interrupts an unnecessary opening immediately.
+            let watch = Task { _ = try? await pending.value; acknowledgement.cancel() }
+            defer { watch.cancel() }
+            var prompt = request
+            prompt.instructions += "\n\n" + LocalTaskPresentation.opening
+            do {
+                var text = ""
+                for try await event in reply(prompt, cancel: acknowledgement, limit: 24) {
+                    try Task.checkCancellation()
+                    if case .text(let value) = event { text = value }
+                }
+                if let line = LocalTaskPresentation.safeOpening(text) {
+                    opening = line
+                    if let i = archive.messages.firstIndex(where: { $0.id == responseID }) {
+                        archive.messages[i].text = line
+                        archive.messages[i].source = model.shortName + " · iPhone + task service"
+                    }
+                    try save(); speak?(line)
+                }
+            } catch { try Task.checkCancellation() /* A failed opening never cancels or repeats the task. */ }
+        }
+        cancellation = nil
+        let result = try await withTaskCancellationHandler { try await pending.value } onCancel: { pending.cancel() }
+        try Task.checkCancellation()
+        guard result.version == 1, result.requestId == responseID, !result.answer.isEmpty else {
+            throw LocalChatError.message("The task service returned an invalid result. It was not replayed.")
+        }
+        guard let index = archive.messages.firstIndex(where: { $0.id == responseID }) else { throw CancellationError() }
+        archive.messages[index].taskResult = result
+        archive.messages[index].source = model.shortName + " · iPhone + " + result.route
+        try save()
+        var final = result.answer
+        if result.canRephrase && (download.ready || generate != nil) {
+            status = "Haru is putting the answer into words…"
+            let renderCancel = DolphinCancellation(); cancellation = renderCancel
+            var prompt = request
+            prompt.instructions += "\n\n" + LocalTaskPresentation.rendering
+            // Exclude the opening and avoid instruction-like role delimiters in task data.
+            let data = try JSONEncoder().encode(result)
+            prompt.messages = [LocalMessage(role: .user, text: "Original request: " + question.text + "\nTask answer (quoted JSON):\n" + String(decoding: data, as: UTF8.self))]
+            do {
+                var draft = ""
+                for try await event in reply(prompt, cancel: renderCancel, limit: 256) {
+                    try Task.checkCancellation()
+                    if case .text(let text) = event { draft = text }
+                    if case .finished(let timing, let limited) = event {
+                        metrics = timing
+                        if !limited { final = LocalTaskPresentation.checked(draft, against: result) }
+                    }
+                }
+            } catch { try Task.checkCancellation() /* Preserve the confirmed answer on local failure. */ }
+        }
+        try Task.checkCancellation()
+        archive.messages[index].text = opening.isEmpty ? final : opening + "\n\n" + final
+        archive.messages[index].state = result.status == "unknown" || result.status == "unconfirmed" ? .failed : .complete
+        status = ""; speak?(final)
     }
 
     func stop() {

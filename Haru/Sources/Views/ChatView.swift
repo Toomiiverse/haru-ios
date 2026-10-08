@@ -24,6 +24,7 @@ struct ChatView: View {
     @Environment(Navigator.self) private var nav
     @Environment(\.scenePhase) private var phase
     @State private var draft = ""
+    @State private var localSpeech = LocalSpeechInput()
     /// What was just sent and when, so a dictation transcript that lands in
     /// the box after the send is known for what it is.
     @State private var lastSent: (text: String, at: Date)?
@@ -394,6 +395,7 @@ struct ChatView: View {
                     Image(systemName: "plus.circle.fill").font(.title2)
                 }
                 .padding(.bottom, 6)
+                .disabled(local.unavailable || chat.busy)
                 .simultaneousGesture(TapGesture().onEnded { chat.stage.attend("attachment", ms: 4_200) })
                 }
 
@@ -425,10 +427,21 @@ struct ChatView: View {
                     .disabled(chat.busy || (local.selected && (local.unavailable || !local.download.ready || chat.call != nil || chat.micOn)))
                 } else if local.selected {
                     Button {
-                        Task { await local.releaseMemory(); await chat.holdMic() }
-                    } label: { Image(systemName: "phone.circle").font(.title) }
-                    .accessibilityLabel("Call Haru via server")
-                    .disabled(session.signedIn != true || local.unavailable)
+                        if localSpeech.listening { localSpeech.stop(submit: true) }
+                        else {
+                            _ = chat.tapToHush()
+                            Task { await localSpeech.start { text in
+                                if !local.send(text) { draft = text }
+                            } }
+                        }
+                    } label: { Image(systemName: localSpeech.listening ? "mic.circle.fill" : "mic.circle").font(.title) }
+                    .accessibilityLabel(localSpeech.listening ? "Finish speaking to Haru" : "Speak to Haru on this iPhone")
+                    .disabled(local.unavailable || !local.download.ready)
+                    .onChange(of: phase) { _, value in if value != .active { localSpeech.stop() } }
+                    .onDisappear { localSpeech.stop() }
+                    .alert("Microphone", isPresented: Binding(get: { localSpeech.problem != nil }, set: { if !$0 { localSpeech.problem = nil } })) {
+                        Button("OK") { localSpeech.problem = nil }
+                    } message: { Text(localSpeech.problem ?? "") }
                 } else {
                     // A tap: one question through her ears, mic off after.
                     // A hold: a call.

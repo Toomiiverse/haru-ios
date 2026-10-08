@@ -13,7 +13,7 @@ final class LocalConversationUITests: XCTestCase {
         XCTAssertTrue(app.buttons["conversation.settings"].waitForExistence(timeout: 10))
         XCTAssertTrue(app.textFields["Say something"].exists || app.textViews["Say something"].exists)
         XCTAssertFalse(app.buttons["On iPhone"].exists)
-        XCTAssertFalse(app.buttons["Call Haru via server"].isEnabled)
+        XCTAssertFalse(app.buttons["Speak to Haru on this iPhone"].isEnabled)
         app.buttons["conversation.settings"].tap()
         XCTAssertTrue(app.buttons["Download Umbral · 3.52 GB"].waitForExistence(timeout: 10))
         let attachment = XCTAttachment(screenshot: app.screenshot())

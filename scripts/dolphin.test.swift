@@ -106,40 +106,54 @@ import CryptoKit
         }
         check(LocalHandoff.requiresServer("What is this?", attachments: true), "attachments cannot reach text-only local model")
         var sentPrompt = ""
-        store.serverReply = { text in
-            sentPrompt = text
+        var started = false
+        var order: [String] = []
+        store.serverTask = { text, id in
+            sentPrompt = text; started = true; order.append("server")
+            try await Task.sleep(for: .milliseconds(50))
+            return LocalTaskResult(requestId: id, status: "verified", answer: "London: 18°C.", route: "weather")
+        }
+        store.generate = { prompt, cancel, limit in
+            check(started, "server starts before native opening")
+            order.append(limit == 24 ? "opening" : "render")
+            check(prompt.instructions.contains("Haru"), "personality retained only in local generation")
             return AsyncThrowingStream { stream in
-                stream.yield("Working"); stream.yield("The server answer."); stream.finish()
+                stream.yield(.text(limit == 24 ? "Let me check that for you." : "London: 18°C."))
+                stream.yield(.finished(LocalReplyMetrics(firstTextSeconds: 0, totalSeconds: 0, generatedTokens: 1, generationSeconds: 0, promptTokens: 1, omittedMessages: 0, loadedThisTurn: false), limited: false))
+                stream.finish()
             }
         }
         store.updateSettings(instructions: "Haru", notes: "PRIVATE_NOTE", contextSize: 1024)
-        check(store.send("Research this", viaServer: true), "explicit handoff accepted without loading local weights")
+        check(store.send("Research this", viaServer: true), "task accepted")
         await settle(store)
-        check(store.archive.messages.last?.text == "The server answer." && store.archive.messages.last?.state == .complete,
-              "confirmed server stream lives in the same transcript")
-        check(store.archive.messages.last?.source == "Haru server" && store.metrics == nil, "server provenance; no fake local timing")
-        check(sentPrompt == "Research this" && !sentPrompt.contains("PRIVATE_NOTE"), "saved notes are not shared by handoff")
-        check(store.send("Compare the options", viaServer: true), "second handoff accepted")
+        check(order == ["server", "opening", "render"], "parallel task starts before opening; result renders afterward")
+        check(store.archive.messages.last?.text == "Let me check that for you.\n\nLondon: 18°C." && store.archive.messages.last?.state == .complete, "opening and locally rendered result share a conversation")
+        check(store.archive.messages.last?.taskResult?.answer == "London: 18°C.", "original evidence retained independently")
+        check(sentPrompt == "Research this", "task contains exact request without notes or personality")
+        check(store.send("Compare the options", viaServer: true), "second task accepted")
         await settle(store)
-        check(sentPrompt.contains("The server answer.") && !sentPrompt.contains("PRIVATE_NOTE"), "handoff has recent conversation but no private notes")
+        check(sentPrompt == "Compare the options", "assistant persona history never enters server task")
         var attempts = 0
-        store.serverReply = { _ in
-            attempts += 1
-            return AsyncThrowingStream { stream in
-                stream.yield("Partial"); stream.finish(throwing: LocalChatError.message("Unknown server outcome"))
-            }
-        }
+        store.serverTask = { _, _ in attempts += 1; throw LocalChatError.message("Unknown server outcome") }
         _ = store.send("A task", viaServer: true)
         await settle(store)
-        check(attempts == 1 && store.archive.messages.last?.state == .failed && store.archive.messages.last?.text == "Partial", "unknown outcomes preserve partial reply without replay")
-        store.serverReply = { _ in AsyncThrowingStream { stream in stream.yield("Still working") } }
+        check(attempts == 1 && store.archive.messages.last?.state == .failed, "unknown outcomes never replay automatically")
+        let originalID = store.archive.messages.last!.id
+        store.serverTask = { _, id in
+            check(id == originalID, "explicit retry reuses request ID, preventing effect replay")
+            return LocalTaskResult(requestId: id, status: "unknown", answer: "Unknown; not replayed.", route: "core")
+        }
+        // Retry requires installed weights in production; send cancellation independently here.
+        store.generate = nil
+        store.serverTask = { _, _ in try await Task.sleep(for: .seconds(60)); throw CancellationError() }
         _ = store.send("Cancel this", viaServer: true)
-        try await Task.sleep(for: .milliseconds(20))
-        store.stop()
-        await settle(store)
-        check(store.archive.messages.last?.state == .interrupted, "server handoff cancellation is not success")
+        try await Task.sleep(for: .milliseconds(20)); store.stop(); await settle(store)
+        check(store.archive.messages.last?.state == .interrupted, "cancellation cannot become success")
+        let facts = LocalTaskResult(requestId: "test", status: "verified", answer: "London: 18°C.", route: "weather")
+        check(LocalTaskPresentation.checked("London: 28°C.", against: facts) == facts.answer, "changed measurements rejected")
+        check(LocalTaskPresentation.safeOpening("Done, I booked it.") == nil, "opening cannot claim completion")
         store.clearConversation()
-        print("PASS: hybrid stream completion, handoff context, private-note exclusion, unknown-no-replay, cancellation, Llama 3 + ChatML templates, isolated model storage, context copy, missing-model refusal, model switch, prompt budget, complete history, ChatML escaping, UTF-8/stop streaming, archive recovery, checksum rejection, cancellation")
+        print("PASS: concurrent raw task/local opening, local result rendering, original evidence retention, private-prompt exclusion, unknown-no-replay, cancellation, numeric preservation, native model formats/storage/streaming")
         if CommandLine.arguments.count > 1 { try await smoke(URL(fileURLWithPath: CommandLine.arguments[1])) }
     }
 
