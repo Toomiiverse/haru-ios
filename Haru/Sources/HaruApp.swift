@@ -7,6 +7,7 @@ struct HaruApp: App {
     @State private var session: Session
     @State private var chat: ChatStore
     @State private var locator: Locator
+    @State private var local = LocalConversationStore()
 
     init() {
         let session = Session()
@@ -25,6 +26,8 @@ struct HaruApp: App {
         .onChange(of: phase) { _, now in
             switch now {
             case .background:
+                local.download.pause()
+                Task { await local.releaseMemory() }
                 PhoneTools.shared.activity(foreground: false)
                 Refresh.schedule()
                 locator.rest()
@@ -38,7 +41,7 @@ struct HaruApp: App {
                 Task { await Push.sync(session) }
                 takeAsk()
                 chat.refreshLive()
-                Task { await chat.standbyOnActive() }
+                if !local.selected { Task { await chat.standbyOnActive() } }
             default: break
             }
         }
@@ -49,8 +52,18 @@ struct HaruApp: App {
                 .environment(session)
                 .environment(chat)
                 .environment(locator)
+                .environment(local)
                 .environment(Navigator.shared)
                 .onOpenURL { Navigator.shared.open($0) }
+                .onReceive(NotificationCenter.default.publisher(for: UIApplication.didReceiveMemoryWarningNotification)) { _ in
+                    Task { await local.releaseMemory() }
+                }
+                .onChange(of: local.selected) { _, selected in
+                    if selected {
+                        _ = chat.tapToHush()
+                        Task { await chat.setStandby(false) }
+                    } else { Task { await local.releaseMemory() } }
+                }
                 // A control's intent can land after the app is already in front.
                 .onReceive(NotificationCenter.default.publisher(for: Shared.asked)) { _ in
                     if phase == .active || Shared.waitingAsk == .hangUp { takeAsk() }
@@ -64,9 +77,10 @@ struct HaruApp: App {
     private func takeAsk() {
         switch Shared.takeAsk() {
         case .call?:
+            local.selected = false
             Navigator.shared.tab = .chat
             Navigator.shared.wantsCall = true
-        case .standbyOn?: Task { await chat.setStandby(true) }
+        case .standbyOn?: local.selected = false; Task { await chat.setStandby(true) }
         case .standbyOff?: Task { await chat.setStandby(false) }
         case .hangUp?: chat.endCall()
         case nil: break
