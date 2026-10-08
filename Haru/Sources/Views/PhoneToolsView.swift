@@ -5,7 +5,7 @@ struct PhoneToolsView:View {
     private let groups=[("weather","Apple weather"),("reminders","All permitted reminder lists"),("calendar","All permitted calendars"),("contacts","Contact lookup"),("health","Recorded sleep and steps"),("location","Location"),("maps","Open directions in Maps"),("open","Browser and Haru settings")]
     var body:some View {
         List {
-            Section {LabeledContent("Connection",value:tools.connected ? "Connected":"Open Haru to connect")}
+            Section {LabeledContent("Connection",value:tools.connected ? "Connected":"Open Haru to connect");Button("Use this iPhone as the default"){Task{await tools.makeDefault()}}.disabled(!tools.connected)}
             Section("Allow explicit phone requests") {
                 ForEach(groups,id:\.0){domain,title in Toggle(title,isOn:Binding(get:{tools.enabled(domain)},set:{on in Task{await tools.setEnabled(domain,on)}}))}
             }

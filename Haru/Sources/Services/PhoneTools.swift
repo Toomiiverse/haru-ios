@@ -58,6 +58,7 @@ import WeatherKit
         if let foreground{self.foreground=foreground};if let callActive{self.callActive=callActive}
         if self.foreground || self.callActive {if loop==nil{start()}} else {stop()}
     }
+    func makeDefault() async {try? await send(["type":"default"])}
     func stop(){generation=UUID();loop?.cancel();beat?.cancel();loop=nil;beat=nil;socket?.cancel(with:.goingAway,reason:nil);socket=nil;connected=false}
     private func start(){
         let epoch=generation

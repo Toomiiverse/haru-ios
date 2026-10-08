@@ -20,22 +20,7 @@ struct HaruApp: App {
 
     var body: some Scene {
         WindowGroup {
-            RootView()
-                .environment(session)
-                .environment(chat)
-                .environment(locator)
-                .environment(Navigator.shared)
-                .onOpenURL { Navigator.shared.open($0) }
-                .task { PhoneTools.shared.activity(foreground: phase == .active) }
-                .onChange(of: chat.callState) { _, state in
-                    PhoneTools.shared.activity(callActive: state == .listening || state == .thinking || state == .speaking)
-                }
-                // A control's intent can land after the app is already in front.
-                .onReceive(NotificationCenter.default.publisher(for: Shared.asked)) { _ in
-                    if phase == .active || Shared.waitingAsk == .hangUp { takeAsk() }
-                }
-                .preferredColorScheme(.dark)
-                .tint(Color("AccentColor"))
+            appContent
         }
         .onChange(of: phase) { _, now in
             switch now {
@@ -57,6 +42,25 @@ struct HaruApp: App {
             default: break
             }
         }
+    }
+
+    private var appContent: some View {
+        RootView()
+                .environment(session)
+                .environment(chat)
+                .environment(locator)
+                .environment(Navigator.shared)
+                .onOpenURL { Navigator.shared.open($0) }
+                .task { PhoneTools.shared.activity(foreground: phase == .active) }
+                .onChange(of: chat.callState) { _, state in
+                    PhoneTools.shared.activity(callActive: state == .listening || state == .thinking || state == .speaking)
+                }
+                // A control's intent can land after the app is already in front.
+                .onReceive(NotificationCenter.default.publisher(for: Shared.asked)) { _ in
+                    if phase == .active || Shared.waitingAsk == .hangUp { takeAsk() }
+                }
+                .preferredColorScheme(.dark)
+                .tint(Color("AccentColor"))
     }
 
     /// What a control asked for (Shared.ask), now that the app is in front and
