@@ -8,6 +8,7 @@ enum LocalFiles {
     static let model = directory.appendingPathComponent(DolphinModel.filename)
     static let receipt = directory.appendingPathComponent("model-verified.json")
     static let resume = directory.appendingPathComponent("download.resume")
+    static let resumeProgress = directory.appendingPathComponent("download-progress.json")
     static let conversation = directory.appendingPathComponent("conversation.json")
 
     static func prepare() throws {
@@ -66,6 +67,7 @@ enum LocalFiles {
         let stamp = Receipt(sha256: DolphinModel.sha256, bytes: DolphinModel.bytes, modified: modified)
         try JSONEncoder().encode(stamp).write(to: receipt, options: .atomic)
         try? fm.removeItem(at: resume)
+        try? fm.removeItem(at: resumeProgress)
     }
 }
 
@@ -90,6 +92,11 @@ final class DolphinDownload {
         do {
             try LocalFiles.prepare()
             phase = LocalFiles.isReady() ? .ready : FileManager.default.fileExists(atPath: LocalFiles.resume.path) ? .paused : .missing
+            if phase == .paused, let data = try? Data(contentsOf: LocalFiles.resumeProgress),
+               let bytes = try? JSONDecoder().decode(Int64.self, from: data) {
+                receivedBytes = min(DolphinModel.bytes, max(0, bytes))
+                progress = Double(receivedBytes) / Double(DolphinModel.bytes)
+            }
             // Only abandoned incoming copies; the verified model and transcript stay.
             for url in try FileManager.default.contentsOfDirectory(at: LocalFiles.directory, includingPropertiesForKeys: nil)
                 where url.lastPathComponent.hasPrefix("incoming-") { try? FileManager.default.removeItem(at: url) }
@@ -102,9 +109,12 @@ final class DolphinDownload {
             try LocalFiles.prepare()
             let capacity = try LocalFiles.directory.resourceValues(forKeys: [.volumeAvailableCapacityForImportantUsageKey])
                 .volumeAvailableCapacityForImportantUsage
-            if let capacity, capacity < DolphinModel.bytes + 256_000_000 {
-                throw LocalChatError.message("Free at least 3.3 GB on this iPhone before downloading Dolphin.")
+            let resuming = FileManager.default.fileExists(atPath: LocalFiles.resume.path)
+            let needed = DolphinModel.bytes - (resuming ? receivedBytes : 0) + 256_000_000
+            if let capacity, capacity < needed {
+                throw LocalChatError.message("Free at least \(ByteCountFormatter.string(fromByteCount: needed, countStyle: .decimal)) on this iPhone to continue downloading Dolphin.")
             }
+            if !resuming { receivedBytes = 0; progress = 0 }
             problem = nil; phase = .downloading
             let id = UUID(); operation = id
             let incoming = LocalFiles.directory.appendingPathComponent("incoming-" + id.uuidString)
@@ -125,7 +135,7 @@ final class DolphinDownload {
                     switch result {
                     case .success(let url): self.validate(url, id: id)
                     case .failure(let error):
-                        if let resume { try? resume.write(to: LocalFiles.resume, options: .atomic) }
+                        if let resume { self.saveResume(resume) }
                         self.phase = .paused; self.problem = error.localizedDescription
                     }
                 }
@@ -154,7 +164,7 @@ final class DolphinDownload {
         task.cancel(byProducingResumeData: { [weak self] data in
             Task { @MainActor in
                 if let self, self.operation == id {
-                    if let data { try? data.write(to: LocalFiles.resume, options: .atomic) }
+                    if let data { self.saveResume(data) }
                     self.phase = .paused
                 }
                 session?.finishTasksAndInvalidate()
@@ -209,10 +219,17 @@ final class DolphinDownload {
     func remove() throws {
         guard !working else { return }
         operation = UUID()
-        for url in [LocalFiles.receipt, LocalFiles.model, LocalFiles.resume] where FileManager.default.fileExists(atPath: url.path) {
+        for url in [LocalFiles.receipt, LocalFiles.model, LocalFiles.resume, LocalFiles.resumeProgress] where FileManager.default.fileExists(atPath: url.path) {
             try FileManager.default.removeItem(at: url)
         }
         phase = .missing; progress = 0; receivedBytes = 0; problem = nil
+    }
+
+    private func saveResume(_ data: Data) {
+        do {
+            try data.write(to: LocalFiles.resume, options: .atomic)
+            try JSONEncoder().encode(receivedBytes).write(to: LocalFiles.resumeProgress, options: .atomic)
+        } catch { problem = "Download progress could not be saved: " + error.localizedDescription }
     }
 }
 

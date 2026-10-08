@@ -69,6 +69,7 @@ struct LocalConversationView: View {
                 ToolbarItem(placement: .topBarTrailing) {
                     Menu {
                         Button("On-device settings", systemImage: "slider.horizontal.3") { settings = true }
+                        Button("Stop read-aloud", systemImage: "speaker.slash") { _ = chat.tapToHush() }
                         Button("Retry last reply", systemImage: "arrow.clockwise") { local.retry() }
                             .disabled(local.unavailable || !local.download.ready || local.archive.messages.last?.role != .assistant)
                         ShareLink("Export local history", item: LocalFiles.conversation)
@@ -129,6 +130,7 @@ struct LocalModelSettingsView: View {
     @State private var context = 1024
     @State private var memories = false
     @State private var saved = false
+    @State private var loadedSettings = false
 
     var body: some View {
         @Bindable var download = local.download
@@ -173,7 +175,12 @@ struct LocalModelSettingsView: View {
         }
         .navigationTitle("On-device conversation")
         .navigationBarTitleDisplayMode(.inline)
-        .onAppear { instructions = local.archive.instructions; notes = local.archive.notes; context = local.archive.contextSize }
+        .onAppear {
+            if !loadedSettings {
+                instructions = local.archive.instructions; notes = local.archive.notes; context = local.archive.contextSize
+                loadedSettings = true
+            }
+        }
         .onChange(of: instructions) { _, _ in saved = false }
         .onChange(of: notes) { _, _ in saved = false }
         .onChange(of: context) { _, _ in saved = false }

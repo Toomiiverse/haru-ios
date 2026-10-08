@@ -55,6 +55,8 @@ struct HaruApp: App {
                 .environment(local)
                 .environment(Navigator.shared)
                 .onOpenURL { Navigator.shared.open($0) }
+                .onChange(of: Navigator.shared.wantsCall) { _, wanted in if wanted { local.selected = false } }
+                .onChange(of: Navigator.shared.wantsTalk) { _, wanted in if wanted { local.selected = false } }
                 .onReceive(NotificationCenter.default.publisher(for: UIApplication.didReceiveMemoryWarningNotification)) { _ in
                     Task { await local.releaseMemory() }
                 }

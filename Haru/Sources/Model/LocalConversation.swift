@@ -84,6 +84,8 @@ struct LocalPrompt {
     /// A quoted ChatML delimiter must remain ordinary content, not a new role.
     static func escape(_ text: String) -> String {
         text.replacingOccurrences(of: "<|", with: "< |")
+            .replacingOccurrences(of: "</s>", with: "< /s>")
+            .replacingOccurrences(of: "<s>", with: "< s>")
             .replacingOccurrences(of: "\u{0000}", with: " ")
     }
 }
@@ -99,8 +101,13 @@ struct LocalTextBuffer {
     mutating func append(_ fragment: Data) -> String? {
         guard !stopped else { return nil }
         bytes.append(fragment)
-        guard let decoded = String(data: bytes, encoding: .utf8) else { return nil }
-        bytes.removeAll(keepingCapacity: true)
+        // Preserve only an unfinished trailing scalar. Replace malformed bytes
+        // promptly so one bad token cannot hide subsequent stop markers.
+        let trailing = Self.incompleteSuffix(bytes)
+        let complete = bytes.count - trailing
+        guard complete > 0 else { return nil }
+        let decoded = String(decoding: bytes.prefix(complete), as: UTF8.self)
+        bytes = Data(bytes.suffix(trailing))
         pending += decoded
         if let range = stops.compactMap({ pending.range(of: $0) }).min(by: { $0.lowerBound < $1.lowerBound }) {
             text += pending[..<range.lowerBound]
@@ -127,6 +134,23 @@ struct LocalTextBuffer {
             pending = ""; bytes.removeAll()
         }
         return text
+    }
+
+    private static func incompleteSuffix(_ data: Data) -> Int {
+        let tail = Array(data.suffix(4))
+        guard !tail.isEmpty else { return 0 }
+        var start = tail.count - 1
+        while start > 0 && tail[start] & 0xC0 == 0x80 { start -= 1 }
+        let lead = tail[start]
+        let expected: Int
+        switch lead {
+        case 0xC2...0xDF: expected = 2
+        case 0xE0...0xEF: expected = 3
+        case 0xF0...0xF4: expected = 4
+        default: return 0
+        }
+        let available = tail.count - start
+        return available < expected ? available : 0
     }
 }
 

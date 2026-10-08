@@ -39,6 +39,10 @@ import CryptoKit
         var literal = LocalTextBuffer()
         for byte in Data("A < 3 🌸".utf8) { _ = literal.append(Data([byte])) }
         check(literal.finish() == "A < 3 🌸", "ordinary marker prefixes survive")
+        var malformed = LocalTextBuffer()
+        _ = malformed.append(Data([0xFF]) + Data("hello<|im_end|>hidden".utf8))
+        check(malformed.finish() == "�hello" && malformed.stopped, "malformed UTF-8 cannot hide stop marker")
+        check(!LocalPrompt.escape("<s>literal</s>").contains("</s>"), "quoted EOS remains ordinary content")
         var archive = LocalConversationArchive()
         archive.messages = [LocalMessage(role: .assistant, text: "partial", state: .generating)]
         archive = try JSONDecoder().decode(LocalConversationArchive.self, from: JSONEncoder().encode(archive))

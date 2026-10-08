@@ -76,7 +76,7 @@ int32_t haru_llama_generate(void * ptr, const char * prompt, int32_t limit,
     auto input = tokens(h, prompt);
     *generated = 0;
     if (input.empty() || input.size() + limit > llama_n_ctx(h->context)) return -1;
-    llama_kv_cache_clear(h->context);
+    llama_kv_self_clear(h->context);
     llama_set_abort_callback(h->context, cancelled, signal);
     struct AbortReset { llama_context * c; ~AbortReset() { llama_set_abort_callback(c, nullptr, nullptr); } } reset{h->context};
     for (size_t i = 0; i < input.size(); i += 128) {
