@@ -40,6 +40,9 @@ final class Stage: NSObject, WKNavigationDelegate {
         web.scrollView.isScrollEnabled = false
         web.scrollView.bounces = false
         web.scrollView.contentInsetAdjustmentBehavior = .never
+        // SwiftUI owns the stage tap and long-press gestures. The stage page is
+        // display-only; letting WKWebView hit-test swallows those gestures.
+        web.isUserInteractionEnabled = false
         web.isInspectable = true
         web.navigationDelegate = self
         self.web = web
@@ -48,6 +51,7 @@ final class Stage: NSObject, WKNavigationDelegate {
     }
 
     func reload() { load() }
+    func tap() { run("window.haruStage.tap()") }
 
     private func load() {
         guard let web else { return }
@@ -87,8 +91,8 @@ final class Stage: NSObject, WKNavigationDelegate {
     /// by that share of the stage.
     /// Zoom sizes her box; lift moves her; scale shrinks her in place, on the
     /// page's own transition — the compact stage while typing.
-    func frame(zoom: Double, lift: Double, scale: Double = 1) {
-        run("window.haruStage.frame(\(String(format: "%.3f", zoom)), \(String(format: "%.3f", lift)), \(String(format: "%.3f", scale)))")
+    func frame(zoom: Double, lift: Double, scale: Double = 1, peek: Bool = false) {
+        run("window.haruStage.frame(\(String(format: "%.3f", zoom)), \(String(format: "%.3f", lift)), \(String(format: "%.3f", scale)), \(peek ? "true" : "false"))")
     }
 
     /// How far and how often she looks about: 0 still, 1 lively.
