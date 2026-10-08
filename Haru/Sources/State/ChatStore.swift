@@ -102,7 +102,21 @@ final class ChatStore {
     private var lastAskedAt = Date.distantPast
     /// Her lines being fetched, in the order she will say them, each with the
     /// breath (in milliseconds) she takes before it — none before the first.
-    private var lines: [(gap: Int, fetch: Task<Data?, Never>)] = []
+    private enum VoiceFetch {
+        case stream(SpeechDownload)
+        case clip(Task<Data?, Never>)
+
+        func cancel() {
+            switch self {
+            case .stream(let download): download.cancel()
+            case .clip(let task): task.cancel()
+            }
+        }
+    }
+    private var lines: [(gap: Int, fetch: VoiceFetch)] = []
+    private var activeLine: VoiceFetch?
+    private var drainTask: Task<Void, Never>?
+    private var voiceGeneration = 0
     private var draining = false
     private var spokeSomething = false
     /// Her reply on the call, as it arrives a sentence at a time, and its bubble.
@@ -153,7 +167,10 @@ final class ChatStore {
             if self.enrolling != nil { Task { await self.enrolTake(wav) }; return }
             Task { await self.hear(wav) }
         }
-        audio.onFrames = { [weak self] pcm in self?.call?.send(pcm) }
+        audio.onCapturedFrames = { [weak self] pcm, captured in self?.call?.send(pcm, capturedAt:captured) }
+        audio.onPlaybackEstimate = { [weak self] turn, id, rendered, output, prime, underruns in
+            self?.call?.playbackEstimate(turn:turn,id:id,renderedAt:rendered,outputMs:output,primeMs:prime,underruns:underruns)
+        }
         audio.onInterruption = { [weak self] began, _ in
             guard let self, self.standby else { return }
             if began {
@@ -320,13 +337,7 @@ final class ChatStore {
         var ignored = false
         var failure: String?
         var begun = false
-        // How much of what is on screen she has already been given to say.
-        var spoken = 0
-        // The first line goes out as soon as one sentence has ended, for the
-        // sake of her first word; after that, whole paragraphs or a good run
-        // of sentences — one take per stretch keeps her timbre steady, where a
-        // take per sentence made her sound assembled.
-        var firstLineOut = false
+        var delivery = ChatSpeechDelivery()
         do {
             for try await event in stream {
                 if let error = event.error {
@@ -335,7 +346,7 @@ final class ChatStore {
                     // The round was thrown away; back to waiting, and whatever
                     // she had started saying of it goes too.
                     said = ""
-                    spoken = 0
+                    delivery.reset()
                     hush()
                     paint(id, "", waiting: true)
                 } else if let chunk = event.text, !chunk.isEmpty {
@@ -346,27 +357,9 @@ final class ChatStore {
                     }
                     said += chunk
                     paint(id, said, waiting: false)
-                    // A sentence that has ended is a sentence she can start
-                    // saying while the rest is still being written.
-                    // Short ones ride with the next, so "Fine." is not a line of its own.
-                    var cursor = spoken
-                    while let end = Self.sentenceEnd(in: said, after: cursor) {
-                        let raw = String(said.dropFirst(spoken).prefix(end - spoken))
-                        let piece = raw.trimmingCharacters(in: .whitespacesAndNewlines)
-                        cursor = end
-                        let paragraphEnds = said.dropFirst(end).hasPrefix("\n")
-                        let enough = piece.count >= (firstLineOut ? 160 : 40)
-                        if piece.count >= 40 && (enough || paragraphEnds) {
-                            // A new paragraph is where she breathes: one of her
-                            // recorded sighs goes in the gap, as it does at the desk.
-                            let newParagraph = spoken > 0 && (raw.hasPrefix("\n") || said.dropFirst(max(0, spoken - 2)).prefix(2) == "\n\n")
-                            if newParagraph { sigh() }
-                            // In the mood she is in — the new one lands after
-                            // the words, and the lines after it take it up.
-                            say(piece, emotion: emotion, gap: newParagraph ? 450 : 280)
-                            spoken = end
-                            firstLineOut = true
-                        }
+                } else if let sentence = event.sentence {
+                    for line in delivery.receive(sentence, emotion: event.emotion) {
+                        say(line.text, emotion: line.emotion)
                     }
                 } else if event.done == true {
                     reply = event.reply
@@ -397,15 +390,12 @@ final class ChatStore {
         // By voice, she is now speaking until her last line ends; if no voice
         // ever starts, the queue hands the turn back on its own.
         if let talk { act(talk.replied(now, willSpeak: true)) }
-        // The rest of it, and her face for the whole. Neither is waited for.
-        let rest = String(final.dropFirst(min(spoken, final.count))).trimmingCharacters(in: .whitespacesAndNewlines)
-        if !rest.isEmpty {
-            let newParagraph = spoken > 0 && String(final.dropFirst(min(spoken, final.count))).hasPrefix("\n")
-            if newParagraph { sigh() }
-            say(rest, emotion: emotion, gap: newParagraph ? 450 : 280)
-        } else {
-            drain()
+        // Sentence events carry the server's delivery; visible text is never
+        // voiced a second time. Older servers without events use one final take.
+        for line in delivery.finish(fallbackText: final) {
+            say(line.text, emotion: line.emotion)
         }
+        drain()
         Task { await express(final) }
         // The reply's id — what a thumb or a retry needs — only exists on the
         // server. A quiet reload picks it up, and anything she added since.
@@ -455,11 +445,8 @@ final class ChatStore {
     /// breath — a sentence's worth by default. Two lines run together sound
     /// like one person reading; a pause between them sounds like one talking.
     func say(_ text: String, emotion: String?, gap: Int = 280) {
-        var body: [String: JSONValue] = ["text": .string(text)]
-        if let emotion { body["emotion"] = .string(emotion) }
-        let client = self.client
         // 503 when her voice is switched off for the web: the right amount of fuss is none.
-        lines.append((gap: gap, fetch: Task { try? await client.bytes("/api/speak", post: body) }))
+        lines.append((gap: gap, fetch: .stream(client.speech(text, emotion: emotion))))
         if !draining && !audio.speaking { drain() }
     }
 
@@ -469,7 +456,7 @@ final class ChatStore {
     func sigh() {
         let client = self.client
         let mood = emotion
-        lines.append((gap: 350, fetch: Task { try? await client.bytes("/api/sigh", query: ["emotion": mood]) }))
+        lines.append((gap: 350, fetch: .clip(Task { try? await client.bytes("/api/sigh", query: ["emotion": mood]) })))
         if !draining && !audio.speaking { drain() }
     }
 
@@ -484,32 +471,75 @@ final class ChatStore {
         }
         draining = true
         let next = lines.removeFirst()
-        Task {
-            let data = await next.fetch.value
-            guard draining else { return }
-            // The breath before this line, once something has been said.
-            if spokeSomething, next.gap > 0 {
-                try? await Task.sleep(for: .milliseconds(next.gap))
-                guard draining else { return }
-            }
-            if let data, audio.play(data) {
-                spokeSomething = true
-                // Looking at them for as long as the line runs.
-                stage.attend("talking", ms: Int(audio.remaining * 1000) + 500)
-            } else {
-                drain()
+        activeLine = next.fetch
+        let generation = voiceGeneration
+        drainTask = Task {
+            var streaming = false
+            var playingFile = false
+            do {
+                // No pause before the first line. Later lines can download
+                // during this breath and during the preceding sentence.
+                if spokeSomething, next.gap > 0 { try await Task.sleep(for: .milliseconds(next.gap)) }
+                try Task.checkCancellation()
+                guard generation == voiceGeneration else { return }
+                switch next.fetch {
+                case .clip(let fetch):
+                    let data = await fetch.value
+                    try Task.checkCancellation()
+                    guard generation == voiceGeneration else { return }
+                    if let data { playingFile = audio.play(data) }
+                case .stream(let download):
+                    for try await part in download.parts {
+                        try Task.checkCancellation()
+                        guard generation == voiceGeneration else { return }
+                        switch part {
+                        case .format(let rate):
+                            audio.beginStream(sampleRate: rate)
+                            streaming = true
+                        case .pcm(let data):
+                            audio.feedStream(data)
+                            spokeSomething = true
+                            stage.attend("talking", ms: Int(audio.remaining * 1000) + 500)
+                        case .file(let data): playingFile = audio.play(data)
+                        }
+                    }
+                }
+                guard generation == voiceGeneration else { return }
+                activeLine = nil
+                if playingFile {
+                    spokeSomething = true
+                    stage.attend("talking", ms: Int(audio.remaining * 1000) + 500)
+                }
+                if streaming { audio.endStream() }
+                else if !playingFile { drain() }
+            } catch {
+                guard generation == voiceGeneration else { return }
+                activeLine = nil
+                // Finish any audio already queued; onFinished advances the
+                // queue. An interrupted old request can never restart it.
+                if streaming { audio.endStream() }
+                else { drain() }
             }
         }
+    }
+
+    private func cancelLines() {
+        voiceGeneration += 1
+        drainTask?.cancel()
+        drainTask = nil
+        activeLine?.cancel()
+        activeLine = nil
+        for line in lines { line.fetch.cancel() }
+        lines = []
+        draining = false
+        spokeSomething = false
     }
 
     /// Stops her mid-line and forgets what she was about to say. Returns
     /// whether she was actually talking.
     @discardableResult
     private func hush() -> Bool {
-        for line in lines { line.fetch.cancel() }
-        lines = []
-        draining = false
-        spokeSomething = false
+        cancelLines()
         return audio.stop()
     }
 
@@ -553,7 +583,8 @@ final class ChatStore {
 
     /// What she heard against what was said. She keeps the word that differs
     /// and rewrites it on every take from now on, calls included.
-    func teach(heard: String, meant: String) async {
+    @discardableResult
+    func teach(heard: String, meant: String) async -> Bool {
         do {
             let taught: HearingTaught = try await client.post("/api/hearing", ["heard": .string(heard), "meant": .string(meant)])
             if let pair = taught.learned {
@@ -561,11 +592,13 @@ final class ChatStore {
             } else {
                 notice = "Nothing to learn from that — the sentences are the same, or too different to pin on a word."
             }
+            return true
         } catch HaruError.signedOut {
             session.signedIn = false
         } catch {
             notice = error.localizedDescription
         }
+        return false
     }
 
     // MARK: Her speaking first
@@ -763,12 +796,10 @@ final class ChatStore {
             callState = .speaking
         case .voice(let wav):
             play(wav)
-        case .voiceStart(_, let sampleRate):
+        case .voiceStart(let id, let sampleRate, let turn):
             // Streamed: whatever whole lines were queued are hers no longer.
-            for line in lines { line.fetch.cancel() }
-            lines = []
-            draining = false
-            audio.beginStream(sampleRate: sampleRate)
+            cancelLines()
+            audio.beginStream(sampleRate: sampleRate, timingTurn:turn, timingID:id)
             call?.her(speaking: true)
             stage.attend("talking", ms: 4_000)
         case .pcm(let data):
@@ -803,7 +834,7 @@ final class ChatStore {
 
     /// Her voice off the call, a sentence at a time, played in order.
     private func play(_ wav: Data) {
-        lines.append((gap: 0, fetch: Task<Data?, Never> { wav }))
+        lines.append((gap: 0, fetch: .clip(Task<Data?, Never> { wav })))
         if !draining && !audio.speaking { drain() }
     }
 

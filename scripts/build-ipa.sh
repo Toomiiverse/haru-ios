@@ -15,6 +15,8 @@ if compgen -G "/Applications/Xcode_*.app" >/dev/null; then
 fi
 xcodebuild -version
 node --test scripts/verify-testflight.test.mjs
+bash scripts/test-voice-transport.sh
+bash scripts/test-chat-delivery.sh
 
 command -v xcodegen >/dev/null || brew install xcodegen
 

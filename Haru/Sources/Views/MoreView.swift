@@ -33,6 +33,7 @@ struct MoreView: View {
                 whereabouts
                 health
                 reminders
+                Section { NavigationLink("Phone tools") { PhoneToolsView() } }
                 Section("Her memory") {
                     NavigationLink("What she remembers") { MemoryView() }
                 }

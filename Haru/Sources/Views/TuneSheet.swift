@@ -20,6 +20,7 @@ struct TuneSheet: View {
     @State private var wrong = ""
     @State private var rather = ""
     @State private var sending = false
+    @State private var saveError: String?
 
     private var ready: Bool {
         !sending && !(wrong.trimmed.isEmpty && rather.trimmed.isEmpty)
@@ -32,33 +33,43 @@ struct TuneSheet: View {
                     Text(entry.text).foregroundStyle(.secondary)
                 }
                 Section {
-                    TextField("Too long, wrong tone, made something up…", text: $wrong, axis: .vertical).lineLimit(1...4)
+                    TextField("Too long, wrong tone, made something up…", text: $wrong, axis: .vertical).lineLimit(1...4).disabled(sending)
                 } header: {
                     Text("What was wrong")
                 }
                 Section {
-                    TextField("The reply you wanted", text: $rather, axis: .vertical).lineLimit(1...10)
+                    TextField("The reply you wanted", text: $rather, axis: .vertical).lineLimit(1...10).disabled(sending)
                 } header: {
                     Text("What you'd rather")
                 } footer: {
                     Text("Both optional, either is enough. She never sees this — it goes to the tuning log for you to read later.")
                 }
+                if let saveError {
+                    Section { Text(saveError).foregroundStyle(.red) }
+                }
             }
             .navigationTitle("What was wrong")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
-                ToolbarItem(placement: .cancellationAction) { Button("Cancel") { dismiss() } }
+                ToolbarItem(placement: .cancellationAction) { Button("Cancel") { dismiss() }.disabled(sending) }
                 ToolbarItem(placement: .confirmationAction) {
                     Button("Log it") {
                         sending = true
+                        saveError = nil
                         Task {
-                            _ = await chat.tune(entry, wrong: wrong.trimmed, rather: rather.trimmed)
-                            dismiss()
+                            if await chat.tune(entry, wrong: wrong.trimmed, rather: rather.trimmed) {
+                                dismiss()
+                            } else {
+                                saveError = chat.notice ?? "Could not save that feedback. Try again."
+                                chat.notice = nil
+                                sending = false
+                            }
                         }
                     }
                     .disabled(!ready)
                 }
             }
+            .interactiveDismissDisabled(sending)
         }
     }
 }

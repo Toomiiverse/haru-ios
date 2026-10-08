@@ -72,6 +72,8 @@ targets:
           - CFBundleURLName: com.toomiiverse.haru
             CFBundleURLSchemes:
               - haru
+        NSCalendarsFullAccessUsageDescription: "To read and manage calendar events only when you explicitly ask Haru. Deletion needs confirmation."
+        NSContactsUsageDescription: "To look up a contact you name. Haru never uploads your entire address book."
         NSMicrophoneUsageDescription: "So you can talk to her instead of typing."
         NSLocationWhenInUseUsageDescription: "So she knows roughly where you are, if you let her. Off unless you switch it on."
         # "With the app closed too" under More (Locator.swift): significant changes and visits only.

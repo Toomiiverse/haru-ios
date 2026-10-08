@@ -3,6 +3,20 @@ import SwiftUI
 import UIKit
 import UniformTypeIdentifiers
 
+/// A snapshot owned by the screen, not by a row in the lazy transcript. The
+/// keyboard or a history refresh may recycle that row while an editor is open.
+private enum ChatFeedback: Identifiable {
+    case hearing(Entry)
+    case tuning(Entry)
+
+    var id: String {
+        switch self {
+        case .hearing(let entry): return "hearing:" + entry.id
+        case .tuning(let entry): return "tuning:" + entry.id
+        }
+    }
+}
+
 struct ChatView: View {
     @Environment(Session.self) private var session
     @Environment(ChatStore.self) private var chat
@@ -15,6 +29,7 @@ struct ChatView: View {
     @State private var showPhotos = false
     @State private var showFiles = false
     @State private var showCamera = false
+    @State private var feedback: ChatFeedback?
     @State private var photo: PhotosPickerItem?
     @State private var stageTall = true
     /// Typing: the stage is a strip under the title, her small and whole in
@@ -45,7 +60,16 @@ struct ChatView: View {
                 .onAppear { topInset = geo.safeAreaInsets.top }
                 .onChange(of: geo.safeAreaInsets.top) { _, now in topInset = now }
             }
-            .toolbar { ToolbarItem(placement: .principal) { header } }
+            .toolbar {
+                ToolbarItem(placement: .principal) { header }
+                ToolbarItem(placement: .topBarTrailing) {
+                    Button {
+                        Task { await refreshChat() }
+                    } label: { Label("Refresh chat", systemImage: "arrow.clockwise") }
+                    .disabled(chat.busy || chat.loading || chat.call != nil)
+                    .accessibilityHint("Reload messages from the server")
+                }
+            }
             .navigationBarTitleDisplayMode(.inline)
             .toolbarBackground(.hidden, for: .navigationBar)
         }
@@ -106,6 +130,12 @@ struct ChatView: View {
                 Task { await importFile(url) }
             }
         }
+        .sheet(item: $feedback) { target in
+            switch target {
+            case .hearing(let entry): TeachSheet(heard: entry.text)
+            case .tuning(let entry): TuneSheet(entry: entry)
+            }
+        }
         .alert("Haru", isPresented: noticeShown) {
             Button("OK") { chat.notice = nil }
         } message: {
@@ -114,7 +144,7 @@ struct ChatView: View {
     }
 
     private var noticeShown: Binding<Bool> {
-        Binding(get: { chat.notice != nil }, set: { if !$0 { chat.notice = nil } })
+        Binding(get: { chat.notice != nil && feedback == nil }, set: { if !$0 && feedback == nil { chat.notice = nil } })
     }
 
     // MARK: Her stage
@@ -239,7 +269,8 @@ struct ChatView: View {
             ScrollView {
                 LazyVStack(alignment: .leading, spacing: 10) {
                     ForEach(chat.entries) { entry in
-                        EntryView(entry: entry, isLast: entry.id == chat.lastReply?.id)
+                        EntryView(entry: entry, isLast: entry.id == chat.lastReply?.id,
+                                  onTeach: { feedback = .hearing($0) }, onTune: { feedback = .tuning($0) })
                     }
                     Color.clear.frame(height: 1).id("end")
                 }
@@ -253,12 +284,19 @@ struct ChatView: View {
                     .init(color: Color(uiColor: .systemBackground), location: 0.4),
                 ], startPoint: .top, endPoint: .bottom)
             )
+            .refreshable { await refreshChat() }
             .defaultScrollAnchor(.bottom)
             .scrollDismissesKeyboard(.interactively)
             .onChange(of: chat.entries.count) { _, _ in proxy.scrollTo("end", anchor: .bottom) }
             .onChange(of: chat.entries.last?.text) { _, _ in proxy.scrollTo("end", anchor: .bottom) }
             .onTapGesture { typing = false }
         }
+    }
+
+    private func refreshChat() async {
+        guard !chat.busy, !chat.loading, chat.call == nil else { return }
+        await chat.load()
+        await refreshStanding()
     }
 
     // MARK: Composer
@@ -532,9 +570,9 @@ struct SentPicture: View {
 struct EntryView: View {
     let entry: Entry
     let isLast: Bool
+    let onTeach: (Entry) -> Void
+    let onTune: (Entry) -> Void
     @Environment(ChatStore.self) private var chat
-    @State private var teaching = false
-    @State private var tuning = false
     /// How far her bubble has been pulled towards a reply.
     @State private var drag: CGFloat = 0
 
@@ -585,10 +623,9 @@ struct EntryView: View {
             // only they know which ones were spoken.
             .contextMenu {
                 if !entry.text.isEmpty {
-                    Button { teaching = true } label: { Label("She misheard me", systemImage: "ear") }
+                    Button { onTeach(entry) } label: { Label("She misheard me", systemImage: "ear") }
                 }
             }
-            .sheet(isPresented: $teaching) { TeachSheet(heard: entry.text) }
         }
     }
 
@@ -687,14 +724,13 @@ struct EntryView: View {
             // A thumb is for her; this is for him. It goes to the tuning log on
             // the desk and nowhere near her prompt, so it is offered on every
             // reply and leaves no mark on the bubble.
-            Button { tuning = true } label: { Image(systemName: "square.and.pencil") }
+            Button { onTune(entry) } label: { Image(systemName: "square.and.pencil") }
         }
         .font(.footnote)
         .foregroundStyle(.secondary)
         .buttonStyle(.plain)
         .padding(.leading, 8)
         .disabled(chat.busy)
-        .sheet(isPresented: $tuning) { TuneSheet(entry: entry) }
     }
 }
 

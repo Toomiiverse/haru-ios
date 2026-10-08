@@ -52,6 +52,21 @@ final class Reminders {
 
     static var access: EKAuthorizationStatus { EKEventStore.authorizationStatus(for: .reminder) }
 
+    private var bridgeHeld: Set<String> { Set(UserDefaults.standard.stringArray(forKey:"reminders.bridgeHeld") ?? []) }
+    func pauseBridge() async {
+        while syncing {try? await Task.sleep(for:.milliseconds(20))}
+        quietUntil=Date(timeIntervalSinceNow:60)
+    }
+    func holdBridge(_ identifier:String) {
+        var held=bridgeHeld;held.insert(identifier);UserDefaults.standard.set(Array(held),forKey:"reminders.bridgeHeld")
+    }
+    func serverIdentifier(_ identifier:String)->String? {mapping().first(where:{$0.value==identifier})?.key}
+    func acknowledgeBridge(_ identifier:String,serverId:String?) {
+        if let serverId {var map=mapping();map[serverId]=identifier;save(mapping:map)}
+        var held=bridgeHeld;held.remove(identifier);UserDefaults.standard.set(Array(held),forKey:"reminders.bridgeHeld")
+        quietUntil=Date(timeIntervalSinceNow:3)
+    }
+
     /// The settings page opening: nothing to fetch, but a switch left on
     /// after access was taken away in Settings should say so.
     func load() async {
@@ -124,6 +139,7 @@ final class Reminders {
             for item in page.items where item.kind == "task" {
                 let done = item.done ?? false
                 if let rid = map[item.id] {
+                    if bridgeHeld.contains(rid){claimed.insert(rid);continue}
                     if let reminder = byId[rid] {
                         claimed.insert(rid)
                         if reminder.isCompleted, !done {
@@ -169,7 +185,8 @@ final class Reminders {
 
             // The phone → hers: a reminder added to her list by hand.
             for reminder in existing
-            where !claimed.contains(reminder.calendarItemIdentifier)
+            where !bridgeHeld.contains(reminder.calendarItemIdentifier)
+                && !claimed.contains(reminder.calendarItemIdentifier)
                 && !map.values.contains(reminder.calendarItemIdentifier)
                 && !reminder.isCompleted
                 && !(reminder.title ?? "").trimmingCharacters(in: .whitespaces).isEmpty {

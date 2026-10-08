@@ -9,8 +9,14 @@ struct TeachSheet: View {
     let heard: String
     @Environment(ChatStore.self) private var chat
     @Environment(\.dismiss) private var dismiss
-    @State private var meant = ""
+    @State private var meant: String
     @State private var sending = false
+    @State private var saveError: String?
+
+    init(heard: String) {
+        self.heard = heard
+        _meant = State(initialValue: heard)
+    }
 
     private var ready: Bool {
         let said = meant.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -24,29 +30,38 @@ struct TeachSheet: View {
                     Text(heard).foregroundStyle(.secondary)
                 }
                 Section {
-                    TextField("What you actually said", text: $meant, axis: .vertical).lineLimit(1...5)
+                    TextField("What you actually said", text: $meant, axis: .vertical).lineLimit(1...5).disabled(sending)
                 } header: {
                     Text("You said")
                 } footer: {
                     Text("Change only the word she got wrong. She keeps the difference and hears it right from the next thing you say.")
                 }
+                if let saveError {
+                    Section { Text(saveError).foregroundStyle(.red) }
+                }
             }
             .navigationTitle("She misheard me")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
-                ToolbarItem(placement: .cancellationAction) { Button("Cancel") { dismiss() } }
+                ToolbarItem(placement: .cancellationAction) { Button("Cancel") { dismiss() }.disabled(sending) }
                 ToolbarItem(placement: .confirmationAction) {
                     Button("Teach her") {
                         sending = true
+                        saveError = nil
                         Task {
-                            await chat.teach(heard: heard, meant: meant.trimmingCharacters(in: .whitespacesAndNewlines))
-                            dismiss()
+                            if await chat.teach(heard: heard, meant: meant.trimmingCharacters(in: .whitespacesAndNewlines)) {
+                                dismiss()
+                            } else {
+                                saveError = chat.notice ?? "Could not save that correction. Try again."
+                                chat.notice = nil
+                                sending = false
+                            }
                         }
                     }
                     .disabled(!ready)
                 }
             }
-            .onAppear { if meant.isEmpty { meant = heard } }
+            .interactiveDismissDisabled(sending)
         }
     }
 }

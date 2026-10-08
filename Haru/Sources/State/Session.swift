@@ -74,6 +74,7 @@ final class Session {
     }
 
     func signOut() async {
+        PhoneTools.shared.stop()
         let _: Okay? = try? await client.post("/api/logout")
         client.forgetCookies()
         Shared.forget()
