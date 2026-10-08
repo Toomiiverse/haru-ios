@@ -92,8 +92,55 @@ import CryptoKit
         await store.chooseModel(.dolphin)
         check(store.archive.messages.count == 2, "model switching preserves conversation")
         store.clearConversation()
-        print("PASS: Llama 3 + ChatML templates, isolated model storage, context copy, missing-model refusal, model switch, prompt budget, complete history, ChatML escaping, UTF-8/stop streaming, archive recovery, checksum rejection, cancellation")
+        for split in 0...LocalHandoff.marker.count {
+            let prefix = String(LocalHandoff.marker.prefix(split))
+            check(LocalHandoff.decision(prefix) == (split == LocalHandoff.marker.count ? .server : .hold), "handoff marker buffers across stream boundaries")
+        }
+        check(LocalHandoff.decision("I saw [[HARU_SERVER]] in a story") == .local, "quoted handoff cannot redirect")
+        var sentPrompt = ""
+        store.serverReply = { text in
+            sentPrompt = text
+            return AsyncThrowingStream { stream in
+                stream.yield("Working"); stream.yield("The server answer."); stream.finish()
+            }
+        }
+        store.updateSettings(instructions: "Haru", notes: "PRIVATE_NOTE", contextSize: 1024)
+        check(store.send("Research this", viaServer: true), "explicit handoff accepted without loading local weights")
+        await settle(store)
+        check(store.archive.messages.last?.text == "The server answer." && store.archive.messages.last?.state == .complete,
+              "confirmed server stream lives in the same transcript")
+        check(store.archive.messages.last?.source == "Haru server" && store.metrics == nil, "server provenance; no fake local timing")
+        check(sentPrompt == "Research this" && !sentPrompt.contains("PRIVATE_NOTE"), "saved notes are not shared by handoff")
+        check(store.send("Compare the options", viaServer: true), "second handoff accepted")
+        await settle(store)
+        check(sentPrompt.contains("The server answer.") && !sentPrompt.contains("PRIVATE_NOTE"), "handoff has recent conversation but no private notes")
+        var attempts = 0
+        store.serverReply = { _ in
+            attempts += 1
+            return AsyncThrowingStream { stream in
+                stream.yield("Partial"); stream.finish(throwing: LocalChatError.message("Unknown server outcome"))
+            }
+        }
+        _ = store.send("A task", viaServer: true)
+        await settle(store)
+        check(attempts == 1 && store.archive.messages.last?.state == .failed && store.archive.messages.last?.text == "Partial", "unknown outcomes preserve partial reply without replay")
+        store.serverReply = { _ in AsyncThrowingStream { stream in stream.yield("Still working") } }
+        _ = store.send("Cancel this", viaServer: true)
+        try await Task.sleep(for: .milliseconds(20))
+        store.stop()
+        await settle(store)
+        check(store.archive.messages.last?.state == .interrupted, "server handoff cancellation is not success")
+        store.clearConversation()
+        print("PASS: hybrid stream completion, handoff context, private-note exclusion, unknown-no-replay, cancellation, Llama 3 + ChatML templates, isolated model storage, context copy, missing-model refusal, model switch, prompt budget, complete history, ChatML escaping, UTF-8/stop streaming, archive recovery, checksum rejection, cancellation")
         if CommandLine.arguments.count > 1 { try await smoke(URL(fileURLWithPath: CommandLine.arguments[1])) }
+    }
+
+    @MainActor static func settle(_ store: LocalConversationStore) async {
+        for _ in 0..<2000 {
+            if !store.busy { return }
+            try? await Task.sleep(for: .milliseconds(5))
+        }
+        fatalError("store operation did not settle")
     }
 
     static func smoke(_ model: URL) async throws {

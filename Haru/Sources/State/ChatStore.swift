@@ -249,6 +249,61 @@ final class ChatStore {
         }
     }
 
+
+    /// A harder task from the phone's conversation uses the normal authenticated server chat stream.
+    /// The caller owns the visible/persistent transcript. No automatic replay after an unknown outcome.
+    func replyForLocalHandoff(_ text: String) -> AsyncThrowingStream<String, Error> {
+        AsyncThrowingStream { continuation in
+            let task = Task { @MainActor in
+                guard session.signedIn == true else {
+                    continuation.finish(throwing: LocalChatError.message("Sign in to Haru’s server for this task. Local conversation remains available."))
+                    return
+                }
+                guard !busy, call == nil, !micOn else {
+                    continuation.finish(throwing: LocalChatError.message("Finish the current server reply or call before sending this task."))
+                    return
+                }
+                busy = true
+                defer { busy = false }
+                var body: [String: JSONValue] = ["text": .string(text)]
+                let files = staged
+                if !files.isEmpty { body["attachments"] = .array(files.map(\.record)) }
+                staged = []
+                _ = tapToHush()
+                stage.attend("thinking", ms: 20_000)
+                var reply = ""
+                var done = false
+                var speech = ChatSpeechDelivery()
+                do {
+                    for try await event in client.stream("/api/chat/stream", body) {
+                        try Task.checkCancellation()
+                        if let error = event.error { throw LocalChatError.message(error) }
+                        if event.text == "\u{FFFD}" {
+                            reply = ""; speech.reset(); _ = tapToHush(); continuation.yield("")
+                        } else if let chunk = event.text, !chunk.isEmpty {
+                            reply += chunk; continuation.yield(reply)
+                        } else if let sentence = event.sentence {
+                            for line in speech.receive(sentence, emotion: event.emotion) { say(line.text, emotion: line.emotion) }
+                        } else if event.done == true {
+                            guard event.ignored != true else { throw LocalChatError.message("The server did not answer this request.") }
+                            if let final = event.reply { reply = final; continuation.yield(final) }
+                            done = true
+                        }
+                    }
+                    guard done, !reply.isEmpty else {
+                        throw LocalChatError.message("The server connection ended before the reply was confirmed. The task was not retried; check its outcome before sending it again.")
+                    }
+                    for line in speech.finish(fallbackText: reply) { say(line.text, emotion: line.emotion) }
+                    continuation.finish()
+                } catch {
+                    _ = tapToHush()
+                    continuation.finish(throwing: error)
+                }
+            }
+            continuation.onTermination = { @Sendable _ in task.cancel() }
+        }
+    }
+
     // MARK: Saying something
 
     /// Sent while she is still answering — the composer has already let go

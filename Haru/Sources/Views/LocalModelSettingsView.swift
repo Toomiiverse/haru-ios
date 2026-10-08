@@ -19,20 +19,22 @@ struct LocalModelSettingsView: View {
         @Bindable var download = local.download
         Form {
             Section {
-                LabeledContent("Text replies", value: local.selected ? local.model.shortName + " · This iPhone" : "Haru server")
+                LabeledContent("Text replies", value: local.selected ? local.model.shortName + (local.automaticHandoff ? " → Server" : " · This iPhone") : "Haru server")
                 if local.selected {
                     Button(session.signedIn == true ? "Use Haru server" : "Server sign-in") { local.selected = false }
                         .disabled(switchingDisabled)
                 } else {
-                    Button("Use on this iPhone") {
+                    Button("Use local-first conversation") {
                         local.copyConversation(chat.entries.filter { !$0.waiting && $0.kind != .system }.map {
                             LocalMessage(id: "server-" + $0.id, role: $0.kind == .me ? .user : .assistant, text: $0.text)
                         })
                         if local.problem == nil { local.selected = true }
                     }.disabled(switchingDisabled || !download.ready)
                 }
+                Toggle("Hand harder tasks to server", isOn: Binding(get: { local.automaticHandoff }, set: { local.automaticHandoff = $0 }))
+                    .disabled(switchingDisabled)
             } header: { Text("Haru’s conversation") }
-                footer: { Text("Use the same Chat screen and avatar. Switching to this iPhone copies the complete text exchanges currently on screen. Local replies and notes stay on this phone and are never sent back as server memory. Calls and optional read-aloud still use the server; tools and attachments require server text replies.") }
+                footer: { Text("Use the same Chat screen and avatar. Switching to this iPhone copies the complete text exchanges currently on screen. Everyday replies run locally. Umbral can hand research, tools and harder reasoning to the server. A handoff sends your request and up to six recent messages; saved notes stay on the phone. Handoffs use server history and memory. Calls and read-aloud also use the server.") }
             Section {
                 Picker("Local model", selection: Binding(get: { local.model }, set: { model in
                     Task { await local.chooseModel(model) }
@@ -60,7 +62,7 @@ struct LocalModelSettingsView: View {
                 TextEditor(text: $notes).frame(minHeight: 110).accessibilityLabel("Local background notes")
                 if session.signedIn == true { Button("Choose server memories…") { memories = true } }
             } header: { Text("Notes to remember locally") }
-                footer: { Text("The local model reads these notes and recent complete exchanges. Local chats do not update Haru’s server memory. Keep notes short so there is room for conversation.") }
+                footer: { Text("The local model reads these notes and recent complete exchanges. Local replies do not update server memory unless shared as context during a handoff. Keep notes short so there is room for conversation.") }
             Section {
                 Button(saved ? "Settings saved" : "Save conversation settings") {
                     local.problem = nil
@@ -81,7 +83,13 @@ struct LocalModelSettingsView: View {
             Section("Model and runtime") {
                 Link("Model source and license", destination: local.model.source)
                 Link("Quantized model files", destination: local.model.quantization)
-                if local.model == .umbral { Text("Built with Meta Llama 3").font(.footnote) }
+                if local.model == .umbral {
+                    Text("Built with Meta Llama 3").font(.footnote)
+                    Text("Meta Llama 3 is licensed under the Meta Llama 3 Community License, Copyright © Meta Platforms, Inc. All Rights Reserved.").font(.caption)
+                    NavigationLink("Meta Llama 3 license") {
+                        ScrollView { Text(Self.llamaLicense).font(.footnote).padding() }.navigationTitle("Meta Llama 3")
+                    }
+                }
                 NavigationLink("llama.cpp license") { ScrollView { Text(Self.runtimeLicense).font(.footnote).padding() }.navigationTitle("llama.cpp") }
             }
         }
@@ -130,6 +138,11 @@ struct LocalModelSettingsView: View {
         }
     }
 
+    private static var llamaLicense: String {
+        guard let url = Bundle.main.url(forResource: "llama3-license", withExtension: "txt"),
+              let text = try? String(contentsOf: url, encoding: .utf8) else { return "See the model source for its license." }
+        return text
+    }
     private static let runtimeLicense = """
     llama.cpp b5046 — MIT License
     Copyright (c) 2023-2024 The ggml authors
@@ -192,6 +205,9 @@ struct LocalMessageRow: View {
         HStack {
             if message.role == .user { Spacer(minLength: 48) }
             VStack(alignment: .leading, spacing: 6) {
+                if message.role == .assistant, let source = message.source {
+                    Text(source).font(.caption2).foregroundStyle(.secondary)
+                }
                 if message.state == .generating && message.text.isEmpty {
                     ProgressView().controlSize(.small)
                 } else { Text(message.text).textSelection(.enabled) }
@@ -204,6 +220,12 @@ struct LocalMessageRow: View {
                         if message.id == local.archive.messages.last?.id {
                             Button("Retry", systemImage: "arrow.clockwise") { local.retry() }
                                 .disabled(local.unavailable || !local.download.ready || chat.call != nil || chat.micOn)
+                        }
+                        if message.id == local.archive.messages.last?.id, message.source != "Haru server",
+                           let user = local.archive.messages.dropLast().last, user.role == .user {
+                            Button("Ask server", systemImage: "network") {
+                                _ = local.send(user.text, viaServer: true)
+                            }.disabled(local.unavailable || chat.busy || chat.call != nil || chat.micOn || session.signedIn != true)
                         }
                         if !message.text.isEmpty && session.signedIn == true {
                             Button("Read via server", systemImage: "speaker.wave.2") {

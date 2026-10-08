@@ -54,6 +54,7 @@ struct HaruApp: App {
                 .environment(locator)
                 .environment(local)
                 .environment(Navigator.shared)
+                .onAppear { local.serverReply = { text in chat.replyForLocalHandoff(text) } }
                 .onOpenURL { Navigator.shared.open($0) }
                 .onReceive(NotificationCenter.default.publisher(for: UIApplication.didReceiveMemoryWarningNotification)) { _ in
                     Task { await local.releaseMemory() }

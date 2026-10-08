@@ -70,7 +70,7 @@ struct ChatView: View {
             .toolbar {
                 ToolbarItem(placement: .topBarLeading) {
                     Button { conversationSettings = true } label: {
-                        Label(local.selected ? local.model.shortName + " · iPhone" : "Haru · Server",
+                        Label(local.selected ? local.model.shortName + (local.automaticHandoff ? " → Server" : " · iPhone") : "Haru · Server",
                               systemImage: local.selected ? "iphone" : "network")
                             .font(.caption)
                     }.accessibilityHint("Open conversation settings")
@@ -372,6 +372,7 @@ struct ChatView: View {
     private var composer: some View {
         VStack(spacing: 6) {
             if local.selected {
+                if local.automaticHandoff { Text("Everyday chat on iPhone · Harder tasks via server").font(.caption2).foregroundStyle(.secondary) }
                 if !local.status.isEmpty { Text(local.status).font(.caption).foregroundStyle(.secondary) }
                 if let problem = local.problem { Text(problem).font(.footnote).foregroundStyle(.orange).padding(.horizontal) }
                 if !local.download.ready {
@@ -379,11 +380,11 @@ struct ChatView: View {
                 }
             } else {
                 if let target = chat.replyingTo { replyBar(target) }
-                if !chat.staged.isEmpty { chips }
             }
+            if !chat.staged.isEmpty { chips }
             if chat.talkState != .off || chat.callState != .off || chat.standby { talkPill }
             HStack(alignment: .bottom, spacing: 8) {
-                if !local.selected { Menu {
+                if !local.selected || local.automaticHandoff { Menu {
                     if CameraPicker.available {
                         Button { chat.stage.attend("attachment", ms: 4_200); showCamera = true } label: { Label("Camera", systemImage: "camera") }
                     }
@@ -573,7 +574,8 @@ struct ChatView: View {
         let sent: Bool
         if local.selected {
             _ = chat.tapToHush()
-            sent = local.send(text)
+            let server = !chat.staged.isEmpty || (local.automaticHandoff && text.count > 3000)
+            sent = local.send(text.isEmpty && server ? "Please help with the attached file." : text, viaServer: server)
         } else { sent = await chat.send(text) }
         if !sent { lastSent = nil; draft = text }
     }

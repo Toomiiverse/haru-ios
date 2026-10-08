@@ -6,6 +6,11 @@ final class LocalConversationStore {
     var selected: Bool {
         didSet { UserDefaults.standard.set(selected, forKey: "haru.local.selected") }
     }
+    var automaticHandoff: Bool {
+        didSet { UserDefaults.standard.set(automaticHandoff, forKey: "haru.local.handoff") }
+    }
+    /// Transport supplied by the existing server chat adapter; never a second server policy.
+    var serverReply: ((String) -> AsyncThrowingStream<String, Error>)?
     private(set) var archive = LocalConversationArchive()
     private(set) var download: DolphinDownload
     var model: LocalModel { download.model }
@@ -32,9 +37,11 @@ final class LocalConversationStore {
     private var storageHealthy = true
 
     init() {
-        selected = UserDefaults.standard.bool(forKey: "haru.local.selected")
+        let wasSelected = UserDefaults.standard.bool(forKey: "haru.local.selected")
+        selected = wasSelected
+        automaticHandoff = UserDefaults.standard.object(forKey: "haru.local.handoff") as? Bool ?? true
         let stored = UserDefaults.standard.string(forKey: "haru.local.model").flatMap(LocalModel.init(rawValue:))
-        download = DolphinDownload(model: stored ?? (selected && LocalFiles(.dolphin).isReady() ? .dolphin : .umbral))
+        download = DolphinDownload(model: stored ?? (wasSelected && LocalFiles(.dolphin).isReady() ? .dolphin : .umbral))
         do {
             try LocalFiles.prepare()
             if FileManager.default.fileExists(atPath: LocalFiles.conversation.path) {
@@ -76,11 +83,11 @@ final class LocalConversationStore {
     }
 
     @discardableResult
-    func send(_ raw: String) -> Bool {
+    func send(_ raw: String, viaServer: Bool = false) -> Bool {
         let text = raw.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !unavailable, !text.isEmpty else { return false }
         guard storageHealthy else { problem = "Recover or export the saved conversation before starting another one."; return false }
-        guard download.ready else { problem = "Download \(model.shortName) in Conversation settings first."; return false }
+        guard viaServer || download.ready else { problem = "Download \(model.shortName) in Conversation settings first."; return false }
         guard text.utf8.count <= 16_000 else { problem = "Please shorten this message for the local model."; return false }
         let previous = archive
         archive.messages.append(LocalMessage(role: .user, text: text))
@@ -88,7 +95,7 @@ final class LocalConversationStore {
         let response = LocalMessage(role: .assistant, text: "", state: .generating)
         archive.messages.append(response)
         do { try save() } catch { archive = previous; problem = error.localizedDescription; return false }
-        run(request, responseID: response.id)
+        run(request, responseID: response.id, viaServer: viaServer)
         return true
     }
 
@@ -105,33 +112,73 @@ final class LocalConversationStore {
         run(request, responseID: response.id)
     }
 
-    private func run(_ request: LocalConversationArchive, responseID: String) {
+    private func run(_ request: LocalConversationArchive, responseID: String, viaServer: Bool = false) {
         busy = true; status = "Starting \(model.shortName)…"; problem = nil; metrics = nil
         let cancel = DolphinCancellation(); cancellation = cancel
         let id = UUID(); generationID = id
+        let allowHandoff = automaticHandoff
         generation = Task {
             var checkpoint = Date()
             do {
-                for try await event in engine.reply(model: download.files.model, archive: request, cancellation: cancel, descriptor: model) {
-                    guard generationID == id, let i = archive.messages.firstIndex(where: { $0.id == responseID }) else { break }
-                    switch event {
-                    case .loading: status = "Loading \(model.shortName) into memory…"
-                    case .generating: status = "Reading the conversation…"
-                    case .text(let text):
-                        archive.messages[i].text = text
-                        if !text.isEmpty { status = "Replying on this iPhone…" }
-                        if Date().timeIntervalSince(checkpoint) >= 1 {
-                            try save(); checkpoint = Date()
-                        }
-                    case .finished(let timing, let limited):
-                        metrics = timing
-                        archive.messages[i].state = .complete
-                        status = limited ? "Reply reached the 256-token limit." : ""
+                var handoff = viaServer
+                if !handoff {
+                    var prompt = request
+                    if allowHandoff { prompt.instructions += "\n\n" + LocalHandoff.instructions }
+                    if let i = archive.messages.firstIndex(where: { $0.id == responseID }) {
+                        archive.messages[i].source = model.shortName + " · iPhone"
                     }
+                    for try await event in engine.reply(model: download.files.model, archive: prompt, cancellation: cancel, descriptor: model) {
+                        try Task.checkCancellation()
+                        guard generationID == id, let i = archive.messages.firstIndex(where: { $0.id == responseID }) else { throw CancellationError() }
+                        switch event {
+                        case .loading: status = "Loading \(model.shortName) into memory…"
+                        case .generating: status = "Reading the conversation…"
+                        case .text(let text):
+                            if allowHandoff {
+                                switch LocalHandoff.decision(text) {
+                                case .server: handoff = true; cancel.cancel()
+                                case .hold: continue
+                                case .local: break
+                                }
+                                if handoff { break }
+                            }
+                            archive.messages[i].text = text
+                            if !text.isEmpty { status = "Replying on this iPhone…" }
+                            if Date().timeIntervalSince(checkpoint) >= 1 { try save(); checkpoint = Date() }
+                        case .finished(let timing, let limited):
+                            metrics = timing
+                            archive.messages[i].state = .complete
+                            status = limited ? "Reply reached the 256-token limit." : ""
+                        }
+                        if handoff { break }
+                    }
+                }
+                if handoff {
+                    try Task.checkCancellation()
+                    guard let serverReply else { throw LocalChatError.message("The server is unavailable. Everyday local chat still works. This request was not retried.") }
+                    cancellation = nil
+                    await engine.unload()
+                    status = "Handing this task to Haru’s server…"; metrics = nil
+                    guard let i = archive.messages.firstIndex(where: { $0.id == responseID }),
+                          let question = request.messages.last else { throw CancellationError() }
+                    archive.messages[i].text = ""; archive.messages[i].source = "Haru server"
+                    archive.messages[i].state = .generating
+                    try save()
+                    let text = LocalHandoff.serverPrompt(question: question.text, history: Array(request.messages.dropLast()))
+                    for try await text in serverReply(text) {
+                        try Task.checkCancellation()
+                        guard let i = archive.messages.firstIndex(where: { $0.id == responseID }) else { throw CancellationError() }
+                        archive.messages[i].text = text
+                        status = "Replying via Haru’s server…"
+                        if Date().timeIntervalSince(checkpoint) >= 1 { try save(); checkpoint = Date() }
+                    }
+                    try Task.checkCancellation()
+                    if let i = archive.messages.firstIndex(where: { $0.id == responseID }) { archive.messages[i].state = .complete }
+                    status = ""
                 }
                 if let i = archive.messages.firstIndex(where: { $0.id == responseID }), archive.messages[i].text.isEmpty {
                     archive.messages[i].state = .failed
-                    problem = "\(model.shortName) returned an empty reply. You can retry."
+                    problem = "No reply was returned. You can retry or ask the server."
                 }
             } catch {
                 cancel.cancel()
@@ -142,14 +189,13 @@ final class LocalConversationStore {
                 else { problem = error.localizedDescription; status = "" }
             }
             do { try save() } catch { problem = "The last reply could not be saved: " + error.localizedDescription }
-            if generationID == id {
-                busy = false; cancellation = nil; generation = nil; generationID = nil
-            }
+            if generationID == id { busy = false; cancellation = nil; generation = nil; generationID = nil }
         }
     }
 
     func stop() {
         cancellation?.cancel()
+        generation?.cancel()
         if busy { status = "Stopping…" }
     }
 
