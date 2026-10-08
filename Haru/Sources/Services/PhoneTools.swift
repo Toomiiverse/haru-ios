@@ -19,12 +19,16 @@ import WeatherKit
     var weatherLegal: URL?
     var domains = Set<String>()
     var foreground = false
+    var carPlayActive = false
+    var carPlayDirections: ((String, String, Double) async throws -> [String: Any])?
+    private var presented: Bool { foreground || carPlayActive }
     var callActive = false
     private var socket: URLSessionWebSocketTask?
     private var loop: Task<Void,Never>?
     private var beat: Task<Void,Never>?
     private var serverClock: (Double,Double)?
     private func nowMilliseconds()->Double { if let (server,uptime)=serverClock{return server+(ProcessInfo.processInfo.systemUptime-uptime)*1000};return Date().timeIntervalSince1970*1000 }
+    func commandIsCurrent(_ expiry: Double) -> Bool { nowMilliseconds() < expiry }
     private var generation = UUID()
     private let events = EKEventStore()
     private let contacts = CNContactStore()
@@ -56,9 +60,10 @@ import WeatherKit
             if connected{await hello()}
         } catch {problem=error.localizedDescription}
     }
-    func activity(foreground:Bool?=nil,callActive:Bool?=nil){
+    func activity(foreground:Bool?=nil,callActive:Bool?=nil,carPlayActive:Bool?=nil){
         if let foreground{self.foreground=foreground};if let callActive{self.callActive=callActive}
-        if self.foreground || self.callActive {if loop==nil{start()}} else {stop()}
+        if let carPlayActive { self.carPlayActive = carPlayActive }
+        if presented || self.callActive {if loop==nil{start()}} else {stop()}
     }
     func makeDefault() async {try? await send(["type":"default"])}
     func stop(){generation=UUID();loop?.cancel();beat?.cancel();loop=nil;beat=nil;socket?.cancel(with:.goingAway,reason:nil);socket=nil;connected=false}
@@ -66,7 +71,7 @@ import WeatherKit
         let epoch=generation
         loop=Task { [weak self] in
             guard let self else{return}
-            while !Task.isCancelled,self.generation==epoch,self.foreground || self.callActive {
+            while !Task.isCancelled,self.generation==epoch,self.presented || self.callActive {
                 do {
                     let client=Session.savedClient();var parts=URLComponents(url:client.base.appendingPathComponent("/api/ios/session"),resolvingAgainstBaseURL:false)!
                     parts.scheme=parts.scheme=="https" ? "wss":"ws"
@@ -74,7 +79,7 @@ import WeatherKit
                     if let cookies=HTTPCookieStorage.shared.cookies(for:client.base){for(k,v) in HTTPCookie.requestHeaderFields(with:cookies){request.setValue(v,forHTTPHeaderField:k)}}
                     let ws=client.session.webSocketTask(with:request);self.socket=ws;ws.resume();await self.hello()
                     self.beat=Task { [weak self] in
-                        while !Task.isCancelled {try? await Task.sleep(for:.seconds(10));guard let self else{return};try? await self.send(["type":"heartbeat","foreground":self.foreground,"callActive":self.callActive])}
+                        while !Task.isCancelled {try? await Task.sleep(for:.seconds(10));guard let self else{return};try? await self.send(["type":"heartbeat","foreground":self.presented,"callActive":self.callActive])}
                     }
                     while !Task.isCancelled,self.generation==epoch {
                         let message=try await ws.receive();guard case .string(let raw)=message,raw.utf8.count<=262144,let data=raw.data(using:.utf8),let frame=try JSONSerialization.jsonObject(with:data) as? [String:Any] else{throw Failure("ios_invalid_frame")}
@@ -97,7 +102,7 @@ import WeatherKit
         var caps=Dictionary(uniqueKeysWithValues:["weather","reminders","calendar","contacts","health","location","maps","open"].map{($0,enabled($0))})
         caps["reminders"]=enabled("reminders") && EKEventStore.authorizationStatus(for:.reminder) == .fullAccess
         caps["calendar"]=enabled("calendar") && EKEventStore.authorizationStatus(for:.event) == .fullAccess
-        try? await send(["version":1,"type":"hello","name":UIDevice.current.name,"appVersion":(Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "")+" ("+(Bundle.main.infoDictionary?["CFBundleVersion"] as? String ?? "")+")","timezone":TimeZone.current.identifier,"foreground":foreground,"callActive":callActive,"capabilities":caps])
+        try? await send(["version":1,"type":"hello","name":UIDevice.current.name,"appVersion":(Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "")+" ("+(Bundle.main.infoDictionary?["CFBundleVersion"] as? String ?? "")+")","timezone":TimeZone.current.identifier,"foreground":presented,"callActive":callActive,"capabilities":caps])
     }
     private func send(_ frame:[String:Any]) async throws {
         guard let socket else{throw Failure("ios_not_connected")}
@@ -119,13 +124,15 @@ import WeatherKit
         var began=false
         do {
             guard nowMilliseconds()<expires else{throw Failure("ios_command_expired")}
-            guard foreground || callActive else{throw Failure("ios_foreground_required")}
+            guard presented || callActive else{throw Failure("ios_foreground_required")}
             let domain=String(tool.dropFirst(4));guard enabled(domain) else{throw Failure("ios_permission_required")}
-            guard UIApplication.shared.isProtectedDataAvailable else{throw Failure("ios_foreground_required")}
-            if tool=="ios_maps" || tool=="ios_open"{guard foreground else{throw Failure("ios_foreground_required")}}
+            let carSafeWhileLocked = carPlayActive && ["ios_maps", "ios_weather", "ios_location"].contains(tool)
+            guard UIApplication.shared.isProtectedDataAvailable || carSafeWhileLocked else{throw Failure("ios_foreground_required")}
+            if tool=="ios_maps"{guard presented else{throw Failure("ios_foreground_required")}}
+            if tool=="ios_open"{guard foreground, !carPlayActive else{throw Failure("ios_foreground_required")}}
             try validatePermission(tool)
             try await claim(id,operation:op)
-            guard nowMilliseconds()<expires,foreground || callActive else{throw Failure("ios_command_expired")}
+            guard nowMilliseconds()<expires,presented || callActive else{throw Failure("ios_command_expired")}
             // Persist before any framework mutation. A crash in this interval
             // becomes unknown, not permission to repeat the operation.
             try retain(id,["type":"started","operationId":op]);began=true;executing.insert(id)
@@ -237,6 +244,9 @@ import WeatherKit
             return ["ok":true,"source":"Apple Weather","place":args["place"] as? String ?? "your phone’s reported area","recordedAt":iso(Date()),"current":["condition":String(describing:weather.currentWeather.condition),"temperatureC":weather.currentWeather.temperature.converted(to:.celsius).value],"daily":Array(weather.dailyForecast.forecast.prefix(7)).map{["date":iso($0.date),"lowC":$0.lowTemperature.converted(to:.celsius).value,"highC":$0.highTemperature.converted(to:.celsius).value]},"legalURL":attribution.legalPageURL.absoluteString,"markURL":attribution.combinedMarkLightURL.absoluteString]
         case "ios_maps":
             guard let destination=args["destination"] as? String,!destination.isEmpty else{throw Failure("ios_destination_required")}
+            if carPlayActive, let carPlayDirections {
+                return try await carPlayDirections(destination, args["mode"] as? String ?? "driving", expires)
+            }
             let places=try await CLGeocoder().geocodeAddressString(destination);guard places.count==1 else{throw Failure("ios_ambiguous_location")}
             let item=MKMapItem(placemark:MKPlacemark(placemark:places[0]));let mode=args["mode"] as? String ?? "driving"
             guard nowMilliseconds()<expires,foreground else{throw Failure("ios_foreground_required")}

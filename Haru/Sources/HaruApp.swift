@@ -1,5 +1,16 @@
 import SwiftUI
 
+@MainActor final class HaruRuntime {
+    static let shared = HaruRuntime()
+    let session: Session
+    let chat: ChatStore
+    let locator: Locator
+    private init() {
+        session = Session()
+        chat = ChatStore(session: session)
+        locator = Locator(session: session)
+    }
+
 @main
 struct HaruApp: App {
     @UIApplicationDelegateAdaptor(PushDelegate.self) private var pushDelegate
@@ -9,13 +20,13 @@ struct HaruApp: App {
     @State private var locator: Locator
 
     init() {
-        let session = Session()
+        let runtime = HaruRuntime.shared
+        let session = runtime.session
         _session = State(initialValue: session)
-        _chat = State(initialValue: ChatStore(session: session))
-        _locator = State(initialValue: Locator(session: session))
+        _chat = State(initialValue: runtime.chat)
+        _locator = State(initialValue: runtime.locator)
         // Must happen before launch finishes, which is here.
         Refresh.register(session: session)
-        Audio.configureSession(listening: false)
     }
 
     var body: some Scene {

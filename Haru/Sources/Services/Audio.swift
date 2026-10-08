@@ -77,9 +77,16 @@ final class Audio {
     /// mode narrowed her to a telephone.
     static func configureSession(listening: Bool) {
         let session = AVAudioSession.sharedInstance()
-        try? session.setCategory(.playAndRecord, mode: listening ? .videoChat : .default,
-                                 options: [.defaultToSpeaker, .allowBluetoothA2DP])
+        try? session.setCategory(.playAndRecord, mode: carPlay ? .default : (listening ? .videoChat : .default),
+                                 options: carPlay ? [] : [.defaultToSpeaker, .allowBluetoothA2DP])
         try? session.setActive(true)
+    }
+
+    static var carPlay = false
+
+    func releaseSession() {
+        engine.stop()
+        try? AVAudioSession.sharedInstance().setActive(false, options: .notifyOthersOnDeactivation)
     }
 
     // MARK: Her voice
