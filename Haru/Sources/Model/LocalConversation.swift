@@ -52,6 +52,7 @@ struct LocalMessage: Identifiable, Codable, Equatable {
     var createdAt = Date()
     var source: String? = nil
     var taskResult: LocalTaskResult? = nil
+    var taskRequested: Bool? = nil
 }
 
 struct LocalConversationArchive: Codable {

@@ -119,7 +119,7 @@ final class LocalConversationStore {
         let response = LocalMessage(id: last.id, role: .assistant, text: "", state: .generating)
         archive.messages.append(response)
         do { try save() } catch { archive = previous; problem = error.localizedDescription; return }
-        run(request, responseID: response.id, viaServer: request.messages.last.map { LocalHandoff.requiresServer($0.text) } ?? false)
+        run(request, responseID: response.id, viaServer: last.taskRequested == true || (request.messages.last.map { LocalHandoff.requiresServer($0.text) } ?? false))
     }
 
     private func run(_ request: LocalConversationArchive, responseID: String, viaServer: Bool = false) {
@@ -204,6 +204,11 @@ final class LocalConversationStore {
             throw LocalChatError.message("The task service is unavailable. Everyday local chat still works.")
         }
         status = "Checking your request…"
+        if let i = archive.messages.firstIndex(where: { $0.id == responseID }) {
+            archive.messages[i].taskRequested = true
+            archive.messages[i].source = model.shortName + " · iPhone + task service"
+        }
+        try save()
         // Start the original request BEFORE native inference. No personality or history is sent.
         let pending = Task { try await serverTask(question.text, responseID) }
         defer { pending.cancel() }
