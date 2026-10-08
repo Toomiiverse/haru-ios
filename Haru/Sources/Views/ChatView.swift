@@ -34,7 +34,6 @@ struct ChatView: View {
     @State private var stageTall = true
     /// Typing: she peeks over the transcript while the plate makes room.
     @State private var compact = false
-    @State private var composerTop: CGFloat = 0
     /// The status bar and title, which the stage now runs up behind.
     @State private var topInset: CGFloat = 0
     /// Where things stand with her, for the plate across the seam.
@@ -51,18 +50,13 @@ struct ChatView: View {
             GeometryReader { geo in
                 ZStack(alignment: .top) {
                     VStack(spacing: 0) {
-                        Color.clear.frame(height: compact ? topInset : visibleStageHeight + topInset)
+                        Color.clear.frame(height: visibleStageHeight + topInset)
                         transcript
-                        if compact { Color.clear.frame(height: visibleStageHeight) }
                         composer
-                            .onGeometryChange(for: CGFloat.self) { proxy in
-                                proxy.frame(in: .named("chat-stage")).minY
-                            } action: { composerTop = $0 }
                     }
                     // Keep one web view alive as the keyboard changes the available space.
-                    stageView.offset(y: compact ? max(topInset, composerTop - visibleStageHeight) : 0)
+                    stageView
                 }
-                .coordinateSpace(name: "chat-stage")
                 // Her stage runs up behind the status bar and the title, so
                 // the top of the screen is her ground, not a bar over it.
                 .ignoresSafeArea(edges: .top)
@@ -116,7 +110,7 @@ struct ChatView: View {
             nav.wantsCall = false
             if chat.call == nil { Task { await chat.holdMic() } }
         }
-        // Typing brings her to the composer; leaving the keyboard restores her home.
+        // Typing changes her pose while her panel stays above the transcript.
         // Picking a line to answer is the start of typing the answer.
         .onChange(of: chat.replyingTo?.id) { _, id in
             if id != nil { typing = true }
@@ -160,7 +154,7 @@ struct ChatView: View {
 
     private var stageView: some View {
         StageWebView(stage: chat.stage, client: session.client)
-            .frame(height: visibleStageHeight + (compact ? 0 : topInset))
+            .frame(height: visibleStageHeight + topInset)
             .frame(maxWidth: .infinity)
             .background(Color("LaunchBackground"))
             // Her ground dissolves into the talk rather than stopping at a line.
@@ -170,7 +164,7 @@ struct ChatView: View {
                     .init(color: Color("LaunchBackground").opacity(0.6), location: 0.65),
                     .init(color: Color("LaunchBackground"), location: 1),
                 ], startPoint: .top, endPoint: .bottom)
-                .frame(height: 56)
+                .frame(height: compact ? 16 : 56)
                 .allowsHitTesting(false)
             }
             .overlay(alignment: .bottom) {
@@ -226,7 +220,7 @@ struct ChatView: View {
     }
 
     /// The part of the stage below the title.
-    private var visibleStageHeight: CGFloat { compact ? 112 : stageTall ? 260 : 130 }
+    private var visibleStageHeight: CGFloat { compact ? 160 : stageTall ? 260 : 130 }
 
     /// The page centres her in the whole stage, part of which is under the
     /// title; the lift moves her down by a little over half the covered inset

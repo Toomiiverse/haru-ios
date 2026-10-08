@@ -24,11 +24,14 @@ test('native keyboard peek stays readable, tracks typing and restores the latest
   api.tap();assert.deepEqual(calls.at(-1),['tap']);
   api.frame(1,0,1,false);assert.deepEqual(calls.at(-2),['express','happy']);assert.equal(classes.get('peek'),false);
   c.window.haruNative.ready();assert.deepEqual(calls.at(-2),['express','happy']);
-  assert.match(html,/#scene\.peek #stage\s*\{[^}]*height:240px/);
+  assert.match(html,/#scene\.peek #stage\s*\{[^}]*height:160px; bottom:0/);
   const swift=fs.readFileSync('Haru/Sources/Views/ChatView.swift','utf8');
   assert.match(swift,/scale: 1, peek: compact/);assert.ok(!swift.includes('scale: compact ? 0.5'));
-  assert.match(swift,/composerTop - visibleStageHeight/);assert.equal((swift.match(/StageWebView\(stage:/g)||[]).length,1,'keyboard transition keeps one renderer');
-  assert.match(swift,/frame\(in: \.named\("chat-stage"\)\)/);
+  assert.ok(!swift.includes('composerTop'),'the stage must not follow the composer to the bottom');
+  assert.ok(!swift.includes('stageView.offset'),'the stage remains anchored above the transcript');
+  assert.match(swift,/Color\.clear\.frame\(height: visibleStageHeight \+ topInset\)/);
+  assert.match(swift,/compact \? 160 : stageTall/);
+  assert.equal((swift.match(/StageWebView\(stage:/g)||[]).length,1,'keyboard transition keeps one renderer');
   assert.match(swift,/\.contentShape\(Rectangle\(\)\)[\s\S]*\.onTapGesture\s*\{[\s\S]*chat\.stage\.tap\(\)/);
   assert.match(swift,/let hushed = chat\.tapToHush\(\)[\s\S]*chat\.stage\.tap\(\)[\s\S]*if hushed \{ return \}/);
   const stage=fs.readFileSync('Haru/Sources/Services/Stage.swift','utf8');

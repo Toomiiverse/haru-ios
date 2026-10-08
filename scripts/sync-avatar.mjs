@@ -85,10 +85,10 @@ ${css}
    width); here the stage is hers alone, so #stage takes the scene's size —
    set after the page's rules, which is what makes it win. */
 #stage { padding:0; position:absolute; inset:0; }
-/* Keep a readable head above the transcript instead of scaling it twice. */
+/* Fit her entire head below the title while the keyboard is open. */
 #scene.peek #her { transform:none !important; }
-#scene.peek #stage { top:auto; height:240px; bottom:-50px; }
-#scene.peek .svg-avatar-canvas { align-items:flex-end; }
+#scene.peek #stage { top:auto; height:160px; bottom:0; }
+#scene.peek .svg-avatar-canvas { align-items:center; }
 @media(prefers-reduced-motion:reduce){#her{transition:none;}}
 /* Quiet background sparks stay separate from her responsive light. */
 #field { position:absolute; inset:0; overflow:hidden; pointer-events:none; --lift:1; }
