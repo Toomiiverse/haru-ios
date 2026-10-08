@@ -5,10 +5,10 @@ import vm from 'node:vm';
 const html=fs.readFileSync('Haru/Resources/stage.html','utf8');
 test('native keyboard peek stays readable, tracks typing and restores the latest server face',()=>{
   const code=html.match(/<script>\s*([\s\S]*?)<\/script>/)[1];
-  const calls=[],classes=new Map(),styles=new Map();
+  const calls=[],classes=new Map(),styles=new Map();let expire;
   const element={style:{setProperty:(k,v)=>styles.set(k,v)},classList:{toggle:(k,v)=>classes.set(k,v)}};
   const c={window:{haruAvatar:{express:n=>calls.push(['express',n]),attend:(...a)=>calls.push(['attend',...a]),tap:()=>calls.push(['tap']),notify(){},think(){}}},
-    document:{getElementById:()=>element,addEventListener(){},querySelector:()=>null},performance:{now:()=>1000},requestAnimationFrame:()=>1,setInterval:()=>1,clearInterval(){}};
+    document:{getElementById:()=>element,addEventListener(){},querySelector:()=>null},performance:{now:()=>1000},requestAnimationFrame:()=>1,setInterval:()=>1,clearInterval(){},setTimeout:fn=>{expire=fn;return 1;},clearTimeout(){expire=undefined;}};
   c.window.addEventListener=()=>{};vm.runInNewContext(code,c);
   const api=c.window.haruStage;
   api.express('sleepy');api.frame(1,0,1,true);
@@ -16,14 +16,19 @@ test('native keyboard peek stays readable, tracks typing and restores the latest
   assert.deepEqual(calls.at(-1),['attend','typing',3600000]);
   api.attend('typing',1500);assert.deepEqual(calls.at(-1),['attend','typing',3600000]);
   api.express('happy');assert.notDeepEqual(calls.at(-1),['express','happy']);
+  api.attend('attachment',4200);assert.equal(c.window.haruNative.attachment,true);assert.deepEqual(calls.at(-2),['express','curious']);
+  api.attend('typing',1800);assert.equal(c.window.haruNative.attachment,false);assert.deepEqual(calls.at(-2),['attend','typing',3600000]);
+  api.attend('attachment',4200);expire();assert.equal(c.window.haruNative.attachment,false);assert.deepEqual(calls.at(-2),['express','attentive']);
   api.mouth(.7);assert.equal(c.window.haruNative.mouth,.7);assert.equal(c.window.haruNative.speakingUntil,1450);
   api.mouth(0);assert.equal(c.window.haruNative.mouth,0);
   api.tap();assert.deepEqual(calls.at(-1),['tap']);
   api.frame(1,0,1,false);assert.deepEqual(calls.at(-2),['express','happy']);assert.equal(classes.get('peek'),false);
   c.window.haruNative.ready();assert.deepEqual(calls.at(-2),['express','happy']);
-  assert.match(html,/#scene\.peek #stage\s*\{[^}]*height:280px/);
+  assert.match(html,/#scene\.peek #stage\s*\{[^}]*height:240px/);
   const swift=fs.readFileSync('Haru/Sources/Views/ChatView.swift','utf8');
   assert.match(swift,/scale: 1, peek: compact/);assert.ok(!swift.includes('scale: compact ? 0.5'));
+  assert.match(swift,/composerTop - visibleStageHeight/);assert.equal((swift.match(/StageWebView\(stage:/g)||[]).length,1,'keyboard transition keeps one renderer');
+  assert.match(swift,/frame\(in: \.named\("chat-stage"\)\)/);
   assert.match(swift,/\.contentShape\(Rectangle\(\)\)[\s\S]*\.onTapGesture\s*\{[\s\S]*chat\.stage\.tap\(\)/);
   assert.match(swift,/let hushed = chat\.tapToHush\(\)[\s\S]*chat\.stage\.tap\(\)[\s\S]*if hushed \{ return \}/);
   const stage=fs.readFileSync('Haru/Sources/Services/Stage.swift','utf8');

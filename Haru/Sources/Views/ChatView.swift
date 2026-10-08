@@ -34,6 +34,7 @@ struct ChatView: View {
     @State private var stageTall = true
     /// Typing: she peeks over the transcript while the plate makes room.
     @State private var compact = false
+    @State private var composerTop: CGFloat = 0
     /// The status bar and title, which the stage now runs up behind.
     @State private var topInset: CGFloat = 0
     /// Where things stand with her, for the plate across the seam.
@@ -48,11 +49,20 @@ struct ChatView: View {
     var body: some View {
         NavigationStack {
             GeometryReader { geo in
-                VStack(spacing: 0) {
-                    stageView
-                    transcript
-                    composer
+                ZStack(alignment: .top) {
+                    VStack(spacing: 0) {
+                        Color.clear.frame(height: compact ? topInset : visibleStageHeight + topInset)
+                        transcript
+                        if compact { Color.clear.frame(height: visibleStageHeight) }
+                        composer
+                            .onGeometryChange(for: CGFloat.self) { proxy in
+                                proxy.frame(in: .named("chat-stage")).minY
+                            } action: { composerTop = $0 }
+                    }
+                    // Keep one web view alive as the keyboard changes the available space.
+                    stageView.offset(y: compact ? max(topInset, composerTop - visibleStageHeight) : 0)
                 }
+                .coordinateSpace(name: "chat-stage")
                 // Her stage runs up behind the status bar and the title, so
                 // the top of the screen is her ground, not a bar over it.
                 .ignoresSafeArea(edges: .top)
@@ -105,7 +115,7 @@ struct ChatView: View {
             nav.wantsCall = false
             if chat.call == nil { Task { await chat.holdMic() } }
         }
-        // Typing: she leans over the transcript; leaving the keyboard restores roaming.
+        // Typing brings her to the composer; leaving the keyboard restores her home.
         // Picking a line to answer is the start of typing the answer.
         .onChange(of: chat.replyingTo?.id) { _, id in
             if id != nil { typing = true }
@@ -149,7 +159,7 @@ struct ChatView: View {
 
     private var stageView: some View {
         StageWebView(stage: chat.stage, client: session.client)
-            .frame(height: visibleStageHeight + topInset)
+            .frame(height: visibleStageHeight + (compact ? 0 : topInset))
             .frame(maxWidth: .infinity)
             .background(Color("LaunchBackground"))
             // Her ground dissolves into the talk rather than stopping at a line.
@@ -196,7 +206,7 @@ struct ChatView: View {
                 let hushed = chat.tapToHush()
                 chat.stage.tap()
                 if hushed { return }
-                withAnimation(.easeInOut(duration: 0.25)) { stageTall.toggle() }
+                if !compact { withAnimation(.easeInOut(duration: 0.25)) { stageTall.toggle() } }
             }
             .onLongPressGesture { chat.stage.reload() }
             .onAppear { frameStage() }
@@ -233,7 +243,7 @@ struct ChatView: View {
         let total = visibleStageHeight + topInset
         let under = total > 0 ? (topInset * 0.55) / total : 0
         // Compact: her head peeks over the transcript at a readable size.
-        chat.stage.frame(zoom: stageZoom, lift: stageLift - under, scale: 1, peek: compact)
+        chat.stage.frame(zoom: compact ? 1 : stageZoom, lift: compact ? 0 : stageLift - under, scale: 1, peek: compact)
     }
 
     // MARK: Header
@@ -314,14 +324,15 @@ struct ChatView: View {
             HStack(alignment: .bottom, spacing: 8) {
                 Menu {
                     if CameraPicker.available {
-                        Button { showCamera = true } label: { Label("Camera", systemImage: "camera") }
+                        Button { chat.stage.attend("attachment", ms: 4_200); showCamera = true } label: { Label("Camera", systemImage: "camera") }
                     }
-                    Button { showPhotos = true } label: { Label("Photo", systemImage: "photo") }
-                    Button { showFiles = true } label: { Label("File", systemImage: "doc") }
+                    Button { chat.stage.attend("attachment", ms: 4_200); showPhotos = true } label: { Label("Photo", systemImage: "photo") }
+                    Button { chat.stage.attend("attachment", ms: 4_200); showFiles = true } label: { Label("File", systemImage: "doc") }
                 } label: {
                     Image(systemName: "plus.circle.fill").font(.title2)
                 }
                 .padding(.bottom, 6)
+                .simultaneousGesture(TapGesture().onEnded { chat.stage.attend("attachment", ms: 4_200) })
 
                 TextField("Say something", text: $draft, axis: .vertical)
                     .lineLimit(1...6)
