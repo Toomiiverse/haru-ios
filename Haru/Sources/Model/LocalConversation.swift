@@ -11,6 +11,37 @@ enum DolphinModel {
     """
 }
 
+enum LocalModel: String, CaseIterable, Identifiable, Codable, Sendable {
+    case umbral, dolphin
+    var id: String { rawValue }
+    var name: String { self == .umbral ? "Umbral Mind RP v3.0 · 8B" : DolphinModel.name }
+    var shortName: String { self == .umbral ? "Umbral" : "Dolphin" }
+    var sizeLabel: String { self == .umbral ? "3.52 GB" : "3.02 GB" }
+    var filename: String { self == .umbral ? "L3-Umbral-Mind-RP-v3.0-8B-IQ3_XS.gguf" : DolphinModel.filename }
+    var bytes: Int64 { self == .umbral ? 3_518_753_024 : DolphinModel.bytes }
+    var sha256: String { self == .umbral ? "dc6c244374a1ab49167e139b93147449a65a25cc18ff1758566e44911f3d818a" : DolphinModel.sha256 }
+    var repository: String { self == .umbral ? "L3-Umbral-Mind-RP-v3.0-8B-GGUF" : "dolphin-2.9.3-mistral-7B-32k-GGUF" }
+    var source: URL { URL(string: self == .umbral
+        ? "https://huggingface.co/Casual-Autopsy/L3-Umbral-Mind-RP-v3.0-8B"
+        : "https://huggingface.co/cognitivecomputations/dolphin-2.9.3-mistral-7B-32k")! }
+    var quantization: URL { URL(string: "https://huggingface.co/bartowski/" + repository)! }
+    var url: URL {
+        if self == .dolphin { return DolphinModel.url }
+        return URL(string: "https://huggingface.co/bartowski/" + repository + "/resolve/ae7a34c6f728a955ec1bf52604d24c27000d6dd8/" + filename)!
+    }
+
+    func prompt(system: String, messages: [LocalMessage]) -> String {
+        let turns = [("system", system)] + messages.map { ($0.role.rawValue, $0.text) }
+        if self == .umbral {
+            // llama_tokenize(add_special: true) supplies BOS exactly once.
+            return turns.map { "<|start_header_id|>" + $0.0 + "<|end_header_id|>\n\n" + LocalPrompt.escape($0.1) + "<|eot_id|>" }.joined()
+                + "<|start_header_id|>assistant<|end_header_id|>\n\n"
+        }
+        return turns.map { "<|im_start|>" + $0.0 + "\n" + LocalPrompt.escape($0.1) + "<|im_end|>\n" }.joined()
+            + "<|im_start|>assistant\n"
+    }
+}
+
 struct LocalMessage: Identifiable, Codable, Equatable {
     enum Role: String, Codable { case user, assistant }
     enum State: String, Codable { case complete, interrupted, failed, generating }
@@ -49,7 +80,7 @@ struct LocalPrompt {
     /// Keep the current question and system instructions intact; discard only
     /// whole older exchanges. Count using the actual model tokenizer.
     static func build(instructions: String, notes: String, messages: [LocalMessage],
-                      contextSize: Int, outputTokens: Int,
+                      contextSize: Int, outputTokens: Int, model: LocalModel = .dolphin,
                       count: (String) throws -> Int) throws -> LocalPrompt {
         guard let last = messages.last, last.role == .user, !last.text.isEmpty else {
             throw LocalChatError.message("Write a message first.")
@@ -67,9 +98,7 @@ struct LocalPrompt {
         let system = instructions + (notes.isEmpty ? "" : "\n\nUser-selected background notes (may be outdated):\n" + notes)
         while true {
             let included = exchanges.flatMap { $0 } + [last]
-            let text = "<|im_start|>system\n" + escape(system) + "<|im_end|>\n"
-                + included.map { "<|im_start|>\($0.role.rawValue)\n" + escape($0.text) + "<|im_end|>\n" }.joined()
-                + "<|im_start|>assistant\n"
+            let text = model.prompt(system: system, messages: included)
             let tokens = try count(text)
             if tokens + outputTokens + 8 <= contextSize {
                 return LocalPrompt(text: text, tokens: tokens, omittedMessages: history.count - exchanges.count * 2)
@@ -96,7 +125,7 @@ struct LocalTextBuffer {
     private var pending = ""
     private(set) var text = ""
     private(set) var stopped = false
-    private let stops = ["<|im_end|>", "<|im_start|>", "<|endoftext|>", "</s>"]
+    private let stops = ["<|im_end|>", "<|im_start|>", "<|endoftext|>", "</s>", "<|eot_id|>", "<|end_of_text|>", "<|start_header_id|>", "<|end_header_id|>"]
 
     mutating func append(_ fragment: Data) -> String? {
         guard !stopped else { return nil }

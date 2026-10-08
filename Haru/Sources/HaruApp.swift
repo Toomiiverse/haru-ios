@@ -55,8 +55,6 @@ struct HaruApp: App {
                 .environment(local)
                 .environment(Navigator.shared)
                 .onOpenURL { Navigator.shared.open($0) }
-                .onChange(of: Navigator.shared.wantsCall) { _, wanted in if wanted { local.selected = false } }
-                .onChange(of: Navigator.shared.wantsTalk) { _, wanted in if wanted { local.selected = false } }
                 .onReceive(NotificationCenter.default.publisher(for: UIApplication.didReceiveMemoryWarningNotification)) { _ in
                     Task { await local.releaseMemory() }
                 }
@@ -79,10 +77,9 @@ struct HaruApp: App {
     private func takeAsk() {
         switch Shared.takeAsk() {
         case .call?:
-            local.selected = false
             Navigator.shared.tab = .chat
             Navigator.shared.wantsCall = true
-        case .standbyOn?: local.selected = false; Task { await chat.setStandby(true) }
+        case .standbyOn?: Task { await local.releaseMemory(); await chat.setStandby(true) }
         case .standbyOff?: Task { await chat.setStandby(false) }
         case .hangUp?: chat.endCall()
         case nil: break

@@ -7,7 +7,18 @@ final class LocalConversationStore {
         didSet { UserDefaults.standard.set(selected, forKey: "haru.local.selected") }
     }
     private(set) var archive = LocalConversationArchive()
-    let download = DolphinDownload()
+    private(set) var download: DolphinDownload
+    var model: LocalModel { download.model }
+    func chooseModel(_ model: LocalModel) async {
+        guard !unavailable, !download.working, model != self.model else { return }
+        releasing = true
+        defer { releasing = false }
+        await engine.unload()
+        download = DolphinDownload(model: model)
+        UserDefaults.standard.set(model.rawValue, forKey: "haru.local.model")
+        metrics = nil; status = ""; problem = nil
+        // Keep the local route selected: an unavailable model must never fall back to the server.
+    }
     private(set) var busy = false
     private(set) var releasing = false
     var unavailable: Bool { busy || releasing }
@@ -22,6 +33,8 @@ final class LocalConversationStore {
 
     init() {
         selected = UserDefaults.standard.bool(forKey: "haru.local.selected")
+        let stored = UserDefaults.standard.string(forKey: "haru.local.model").flatMap(LocalModel.init(rawValue:))
+        download = DolphinDownload(model: stored ?? (selected && LocalFiles(.dolphin).isReady() ? .dolphin : .umbral))
         do {
             try LocalFiles.prepare()
             if FileManager.default.fileExists(atPath: LocalFiles.conversation.path) {
@@ -34,6 +47,22 @@ final class LocalConversationStore {
             storageHealthy = false
             problem = "The saved local conversation could not be opened. It has been kept on disk. " + error.localizedDescription
         }
+    }
+
+    func copyConversation(_ messages: [LocalMessage]) {
+        guard !unavailable, storageHealthy else { return }
+        let previous = archive
+        let known = Set(archive.messages.map(\.id))
+        var i = 0
+        while i + 1 < messages.count {
+            let user = messages[i], reply = messages[i + 1]
+            if user.role == .user && reply.role == .assistant && !user.text.isEmpty && !reply.text.isEmpty
+                && user.state == .complete && reply.state == .complete {
+                if !known.contains(user.id) && !known.contains(reply.id) { archive.messages += [user, reply] }
+                i += 2
+            } else { i += 1 }
+        }
+        do { try save(); problem = nil } catch { archive = previous; problem = error.localizedDescription }
     }
 
     func updateSettings(instructions: String, notes: String, contextSize: Int) {
@@ -51,7 +80,7 @@ final class LocalConversationStore {
         let text = raw.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !unavailable, !text.isEmpty else { return false }
         guard storageHealthy else { problem = "Recover or export the saved conversation before starting another one."; return false }
-        guard download.ready else { problem = "Download Dolphin in On-device settings first."; return false }
+        guard download.ready else { problem = "Download \(model.shortName) in Conversation settings first."; return false }
         guard text.utf8.count <= 16_000 else { problem = "Please shorten this message for the local model."; return false }
         let previous = archive
         archive.messages.append(LocalMessage(role: .user, text: text))
@@ -77,16 +106,16 @@ final class LocalConversationStore {
     }
 
     private func run(_ request: LocalConversationArchive, responseID: String) {
-        busy = true; status = "Starting Dolphin…"; problem = nil; metrics = nil
+        busy = true; status = "Starting \(model.shortName)…"; problem = nil; metrics = nil
         let cancel = DolphinCancellation(); cancellation = cancel
         let id = UUID(); generationID = id
         generation = Task {
             var checkpoint = Date()
             do {
-                for try await event in engine.reply(model: LocalFiles.model, archive: request, cancellation: cancel) {
+                for try await event in engine.reply(model: download.files.model, archive: request, cancellation: cancel, descriptor: model) {
                     guard generationID == id, let i = archive.messages.firstIndex(where: { $0.id == responseID }) else { break }
                     switch event {
-                    case .loading: status = "Loading Dolphin into memory…"
+                    case .loading: status = "Loading \(model.shortName) into memory…"
                     case .generating: status = "Reading the conversation…"
                     case .text(let text):
                         archive.messages[i].text = text
@@ -102,7 +131,7 @@ final class LocalConversationStore {
                 }
                 if let i = archive.messages.firstIndex(where: { $0.id == responseID }), archive.messages[i].text.isEmpty {
                     archive.messages[i].state = .failed
-                    problem = "Dolphin returned an empty reply. You can retry."
+                    problem = "\(model.shortName) returned an empty reply. You can retry."
                 }
             } catch {
                 cancel.cancel()

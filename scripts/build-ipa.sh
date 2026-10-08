@@ -10,6 +10,8 @@ cd "$(dirname "$0")/.."
 if git log -1 --format=%B | grep -qx 'Haru-Build-Only: true'; then HARU_BUILD_ONLY=1; fi
 if git log -1 --format=%B | grep -qx 'Haru-Dolphin-Smoke: true'; then export HARU_DOLPHIN_SMOKE=1; fi
 
+if git log -1 --format=%B | grep -qx 'Haru-Umbral-Smoke: true'; then export HARU_UMBRAL_SMOKE=1; fi
+
 # The newest Xcode on the box, else whatever is selected. App Store Connect
 # refuses uploads built with anything older than the iOS 26 SDK (Xcode 26),
 # and the macos-15 image's default is still 16.4. (Pinning 16.2 once failed in

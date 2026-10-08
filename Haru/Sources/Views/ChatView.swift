@@ -20,6 +20,7 @@ private enum ChatFeedback: Identifiable {
 struct ChatView: View {
     @Environment(Session.self) private var session
     @Environment(ChatStore.self) private var chat
+    @Environment(LocalConversationStore.self) private var local
     @Environment(Navigator.self) private var nav
     @Environment(\.scenePhase) private var phase
     @State private var draft = ""
@@ -39,6 +40,7 @@ struct ChatView: View {
     /// Where things stand with her, for the plate across the seam.
     @State private var standing: Standing?
     @State private var showStatus = false
+    @State private var conversationSettings = false
     @AppStorage("stage.zoom") private var stageZoom = 1.0
     @AppStorage("stage.lift") private var stageLift = 0.0
     @FocusState private var typing: Bool
@@ -66,6 +68,13 @@ struct ChatView: View {
                 .onChange(of: geo.safeAreaInsets.top) { _, now in topInset = now }
             }
             .toolbar {
+                ToolbarItem(placement: .topBarLeading) {
+                    Button { conversationSettings = true } label: {
+                        Label(local.selected ? local.model.shortName + " · iPhone" : "Haru · Server",
+                              systemImage: local.selected ? "iphone" : "network")
+                            .font(.caption)
+                    }.accessibilityHint("Open conversation settings")
+                }
                 ToolbarItem(placement: .topBarTrailing) {
                     Button { showStatus = true } label: {
                         Label("Haru status", systemImage: MoodLook.symbol(for: standing?.emotion ?? chat.emotion))
@@ -77,8 +86,19 @@ struct ChatView: View {
             .navigationBarTitleDisplayMode(.inline)
             .toolbarBackground(.hidden, for: .navigationBar)
         }
-        .task {
+        .sheet(isPresented: $conversationSettings) {
+            NavigationStack {
+                LocalModelSettingsView().toolbar { Button("Done") { conversationSettings = false } }
+            }
+        }
+        .task(id: local.selected) {
+            if local.selected {
+                if !local.download.ready { conversationSettings = true }
+                return
+            }
+            guard session.signedIn == true else { return }
             await chat.load()
+            guard !local.selected, !Task.isCancelled else { return }
             await chat.askIfSheHasSomethingToSay()
             await refreshStanding()
         }
@@ -86,11 +106,12 @@ struct ChatView: View {
             Task { await refreshStanding() }
         }
         .onReceive(poll) { _ in
-            Task { await chat.askIfSheHasSomethingToSay() }
+            if !local.selected { Task { await chat.askIfSheHasSomethingToSay() } }
         }
         .onChange(of: phase) { _, now in
             guard now == .active else { return }
             chat.stage.recoverIfNeeded()
+            guard !local.selected, session.signedIn == true else { return }
             Task {
                 // Re-read the day unless she is mid-answer, when the stream on
                 // screen is newer than anything the server would hand back.
@@ -103,13 +124,13 @@ struct ChatView: View {
         .onChange(of: nav.wantsTalk, initial: true) { _, wanted in
             guard wanted else { return }
             nav.wantsTalk = false
-            if !chat.micOn { Task { await chat.toggleMic() } }
+            if !chat.micOn, session.signedIn == true { Task { await local.releaseMemory(); await chat.toggleMic() } }
         }
         // haru://call — the Call Haru shortcut, a Vocal Shortcut: straight into a call.
         .onChange(of: nav.wantsCall, initial: true) { _, wanted in
             guard wanted else { return }
             nav.wantsCall = false
-            if chat.call == nil { Task { await chat.holdMic() } }
+            if chat.call == nil, session.signedIn == true { Task { await local.releaseMemory(); await chat.holdMic() } }
         }
         // She leans over her panel's edge toward typing without leaving her home.
         // Picking a line to answer is the start of typing the answer.
@@ -227,6 +248,7 @@ struct ChatView: View {
     /// so she sits in the middle of what can be seen with air above her
     /// heart. Lift is a share of the stage, up positive, as the page reads it.
     private func refreshStanding() async {
+        guard !local.selected, session.signedIn == true else { return }
         if let now: Standing = try? await session.client.get("/api/status") {
             standing = now
             Shared.publish(standing: now)
@@ -252,8 +274,14 @@ struct ChatView: View {
         VStack(alignment: .leading, spacing: 12) {
             Text("Status & mood").font(.headline)
             LabeledContent("Activity", value: state).font(.subheadline)
+            if local.selected {
+                Text(local.model.name + " runs on this iPhone.").font(.subheadline)
+                Text("Server mood and relationship updates resume with server replies.").font(.caption).foregroundStyle(.secondary)
+                Button("Conversation settings") { showStatus = false; conversationSettings = true }
+            } else {
             Nameplate(standing: standing, emotion: standing?.emotion ?? chat.emotion) { openStatus() }
             Button("View full status", systemImage: "heart.text.square") { openStatus() }
+            }
         }
         .padding(16)
         .frame(idealWidth: 340, maxWidth: 360)
@@ -267,6 +295,7 @@ struct ChatView: View {
     }
 
     private var state: String {
+        if local.selected && local.busy { return local.status }
         if chat.busy { return "thinking…" }
         if chat.transcribing { return "working out what you said…" }
         switch chat.callState {
@@ -290,9 +319,17 @@ struct ChatView: View {
         ScrollViewReader { proxy in
             ScrollView {
                 LazyVStack(alignment: .leading, spacing: 10) {
+                    if local.selected {
+                        if local.archive.messages.isEmpty {
+                            Text("Talk to Haru here. " + local.model.shortName + " replies on your iPhone.")
+                                .font(.footnote).foregroundStyle(.secondary).padding(.vertical, 12)
+                        }
+                        ForEach(local.archive.messages) { message in LocalMessageRow(message: message) }
+                    } else {
                     ForEach(chat.entries) { entry in
                         EntryView(entry: entry, isLast: entry.id == chat.lastReply?.id,
                                   onTeach: { feedback = .hearing($0) }, onTune: { feedback = .tuning($0) })
+                    }
                     }
                     Color.clear.frame(height: 1).id("end")
                 }
@@ -312,6 +349,8 @@ struct ChatView: View {
             .refreshable { await refreshChat() }
             .defaultScrollAnchor(.bottom)
             .scrollDismissesKeyboard(.interactively)
+            .onChange(of: local.archive.messages.count) { _, _ in proxy.scrollTo("end", anchor: .bottom) }
+            .onChange(of: local.archive.messages.last?.text) { _, _ in proxy.scrollTo("end", anchor: .bottom) }
             .onChange(of: chat.entries.count) { _, _ in proxy.scrollTo("end", anchor: .bottom) }
             .onChange(of: chat.entries.last?.text) { _, _ in proxy.scrollTo("end", anchor: .bottom) }
             .onTapGesture { typing = false }
@@ -319,7 +358,7 @@ struct ChatView: View {
     }
 
     private func refreshChat() async {
-        guard !chat.busy, !chat.loading, chat.call == nil else { return }
+        guard !local.selected, !chat.busy, !chat.loading, chat.call == nil else { return }
         await chat.load()
         await refreshStanding()
     }
@@ -332,11 +371,19 @@ struct ChatView: View {
 
     private var composer: some View {
         VStack(spacing: 6) {
-            if let target = chat.replyingTo { replyBar(target) }
-            if !chat.staged.isEmpty { chips }
+            if local.selected {
+                if !local.status.isEmpty { Text(local.status).font(.caption).foregroundStyle(.secondary) }
+                if let problem = local.problem { Text(problem).font(.footnote).foregroundStyle(.orange).padding(.horizontal) }
+                if !local.download.ready {
+                    Button("Download " + local.model.shortName + " in settings") { conversationSettings = true }
+                }
+            } else {
+                if let target = chat.replyingTo { replyBar(target) }
+                if !chat.staged.isEmpty { chips }
+            }
             if chat.talkState != .off || chat.callState != .off || chat.standby { talkPill }
             HStack(alignment: .bottom, spacing: 8) {
-                Menu {
+                if !local.selected { Menu {
                     if CameraPicker.available {
                         Button { chat.stage.attend("attachment", ms: 4_200); showCamera = true } label: { Label("Camera", systemImage: "camera") }
                     }
@@ -347,6 +394,7 @@ struct ChatView: View {
                 }
                 .padding(.bottom, 6)
                 .simultaneousGesture(TapGesture().onEnded { chat.stage.attend("attachment", ms: 4_200) })
+                }
 
                 TextField("Say something", text: $draft, axis: .vertical)
                     .lineLimit(1...6)
@@ -365,11 +413,21 @@ struct ChatView: View {
                     .background(Color(uiColor: .secondarySystemBackground), in: RoundedRectangle(cornerRadius: 18))
                     .focused($typing)
 
-                if canSend {
+                if local.selected && local.busy {
+                    Button { local.stop() } label: { Image(systemName: "stop.circle.fill").font(.title) }
+                        .accessibilityLabel("Stop local reply")
+                } else if canSend {
                     Button { Task { await sendDraft() } } label: {
                         Image(systemName: "arrow.up.circle.fill").font(.title)
                     }
-                    .disabled(chat.busy)
+                    .accessibilityLabel(local.selected ? "Send to " + local.model.shortName + " on this iPhone" : "Send to Haru server")
+                    .disabled(chat.busy || (local.selected && (local.unavailable || !local.download.ready || chat.call != nil || chat.micOn)))
+                } else if local.selected {
+                    Button {
+                        Task { await local.releaseMemory(); await chat.holdMic() }
+                    } label: { Image(systemName: "phone.circle").font(.title) }
+                    .accessibilityLabel("Call Haru via server")
+                    .disabled(session.signedIn != true || local.unavailable)
                 } else {
                     // A tap: one question through her ears, mic off after.
                     // A hold: a call.
@@ -512,7 +570,11 @@ struct ChatView: View {
         let text = draft
         draft = ""
         lastSent = (text, Date())
-        let sent = await chat.send(text)
+        let sent: Bool
+        if local.selected {
+            _ = chat.tapToHush()
+            sent = local.send(text)
+        } else { sent = await chat.send(text) }
         if !sent { lastSent = nil; draft = text }
     }
 

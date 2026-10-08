@@ -7,7 +7,7 @@ struct RootView: View {
     var body: some View {
         Group {
             if local.selected && session.signedIn != true {
-                LocalConversationView()
+                ChatView()
             } else {
                 switch session.signedIn {
                 case .none:
