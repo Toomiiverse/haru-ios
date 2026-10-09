@@ -34,6 +34,7 @@ struct MoreView: View {
                 health
                 reminders
                 Section { NavigationLink("Phone tools") { PhoneToolsView() } }
+                Section { NavigationLink("Feelings and reactions") { AffectSettingsView() } }
                 Section("Her memory") {
                     NavigationLink("What she remembers") { MemoryView() }
                 }

@@ -101,6 +101,17 @@ struct HaruClient: Sendable {
         return try JSONDecoder().decode(T.self, from: data)
     }
 
+    /// One revision-bound preference write. No retry or optimistic confirmation.
+    func saveAffectSettings(_ command: AffectSettingsSave) async throws -> AffectSettings {
+        var req = request("/api/affect/settings", method: "POST")
+        req.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        req.setValue("1", forHTTPHeaderField: "X-Haru-Affect-UI")
+        req.httpBody = try JSONEncoder().encode(command)
+        let (data, response) = try await session.data(for: req)
+        try Self.check(response, data)
+        return try JSONDecoder().decode(AffectSettings.self, from: data)
+    }
+
     /// A raw body — a recording, a file — for the two routes that take one.
     func upload<T: Decodable>(_ path: String, data: Data, type: String, query: [String: String] = [:]) async throws -> T {
         var req = request(path, method: "POST", query: query)

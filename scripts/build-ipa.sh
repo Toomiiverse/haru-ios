@@ -18,6 +18,7 @@ fi
 xcodebuild -version
 node --test scripts/verify-testflight.test.mjs scripts/stage.test.mjs
 bash scripts/test-voice-transport.sh
+bash scripts/test-affect-settings.sh
 bash scripts/test-chat-delivery.sh
 bash scripts/test-stage-recovery.sh
 bash scripts/test-retired-model-cleanup.sh
