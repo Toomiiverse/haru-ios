@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 import { spawn } from 'node:child_process';
 
 let writes = 0;
+let statusReads = 0;
 const snapshot = {
   version: 1, enabled: true, revision: 7,
   preferences: { reactToConversation: true, allowDecline: true },
@@ -10,6 +11,17 @@ const snapshot = {
   controls: [{ key: 'reactToConversation', label: 'React to conversation', description: 'A server-authored description.' }],
 };
 const server = http.createServer(async (req, res) => {
+  if (req.url === '/status-test/api/affect/settings') {
+    assert.equal(req.method, 'GET', 'Status must never write affect preferences');
+    const read = ++statusReads;
+    if (read === 3) { res.writeHead(503); return res.end('unavailable'); }
+    const value = structuredClone(snapshot);
+    value.current.emotion = read === 1 ? 'happy' : 'worried';
+    if (read === 4) { value.enabled = false; value.current.episodes = []; }
+    res.setHeader('Content-Type', 'application/json');
+    if (read === 1) return setTimeout(() => res.end(JSON.stringify(value)), 250);
+    return res.end(JSON.stringify(value));
+  }
   assert.equal(req.url, '/api/affect/settings');
   res.setHeader('Content-Type', 'application/json');
   if (req.method === 'GET') return res.end(JSON.stringify(snapshot));
@@ -41,6 +53,7 @@ server.listen(0, '127.0.0.1', () => {
     server.closeAllConnections();
     server.close();
     assert.equal(writes, 3, 'An unconfirmed write was retried');
+    assert.equal(statusReads, 4, 'Status refresh cases did not complete');
     process.exitCode = code ?? 1;
   });
 });

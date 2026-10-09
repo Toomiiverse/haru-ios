@@ -1,10 +1,14 @@
 import SwiftUI
 
-/// Where you stand with her: GET /api/status, with the agenda's tick-off.
+/// Relationship and agenda from status; current feelings from Core’s affect snapshot.
 struct StatusView: View {
     @Environment(Session.self) private var session
     @State private var standing: Standing?
     @State private var problem: String?
+    @State private var affect = AffectStatus()
+    @State private var request = UUID()
+    @State private var standingAddress: String?
+    @Environment(\.scenePhase) private var phase
 
     var body: some View {
         NavigationStack {
@@ -12,9 +16,20 @@ struct StatusView: View {
                 if let s = standing {
                     Section {
                         HStack(spacing: 14) {
-                            PortraitView().frame(width: 72, height: 72)
+                            let emotion = s.asleep == true ? "sleepy" : affect.snapshot?.current.emotion ?? s.emotion
+                            Image(systemName: MoodLook.symbol(for: emotion))
+                                .font(.system(size: 30, weight: .medium))
+                                .foregroundStyle(MoodLook.tint(for: emotion))
+                                .frame(width: 72, height: 72)
+                                .background(MoodLook.tint(for: emotion).opacity(0.15), in: Circle())
+                                .accessibilityHidden(true)
                             VStack(alignment: .leading, spacing: 4) {
-                                Text(s.mood).font(.headline)
+                                Text(s.asleep == true ? "Asleep" : emotion.capitalized).font(.headline)
+                                if s.asleep == true {
+                                    Text("She will answer when she wakes.").font(.subheadline).foregroundStyle(.secondary)
+                                } else if let current = affect.snapshot?.current {
+                                    Text(current.responseDescription).font(.subheadline).foregroundStyle(.secondary)
+                                }
                                 Text("\(Int(s.daysTalked)) days talked, \(Int(s.knownDays)) known")
                                     .font(.footnote).foregroundStyle(.secondary)
                                 if let m = s.minutesSinceSpoke {
@@ -39,18 +54,29 @@ struct StatusView: View {
                                 Text("\(Int(s.bond.toNext)) to the next.").font(.footnote).foregroundStyle(.secondary)
                             }
                         }
-                    }
-
-                    Section("How she is") {
-                        ForEach(s.meters) { MeterRow(meter: $0) }
-                        MeterRow(meter: s.patience)
-                    }
-
-                    Section("Grudge") {
-                        VStack(alignment: .leading, spacing: 6) {
-                            ProgressView(value: min(max(s.grudge.value, 0), s.grudge.of), total: max(s.grudge.of, 1)).tint(.red)
-                            Text(s.grudge.note).font(.footnote).foregroundStyle(.secondary)
+                        if let affection = s.meters.first(where: { $0.label == "Affection" }) {
+                            MeterRow(meter: affection).tint(.pink)
                         }
+                    }
+
+                    if let snapshot = affect.snapshot {
+                        MoodStatusSections(snapshot: snapshot)
+                    } else {
+                        Section("Current feelings") {
+                            if let problem = affect.problem {
+                                Text(problem).foregroundStyle(.secondary)
+                                Button("Retry") { Task { await loadAffect() } }
+                            } else {
+                                ProgressView("Loading feelings…")
+                            }
+                        }
+                    }
+
+                    Section {
+                        NavigationLink("Feelings and reactions", destination: AffectSettingsView())
+                    }
+                    if let problem {
+                        Section { Text(problem).foregroundStyle(.secondary) }
                     }
 
                     if !s.waiting.isEmpty {
@@ -72,18 +98,43 @@ struct StatusView: View {
             .navigationTitle("Where you stand")
             .refreshable { await load() }
         }
-        .task { await load() }
+        .task(id: session.baseURLString) { await load() }
+        .onChange(of: phase) { _, now in
+            if now == .active { Task { await load() } }
+        }
     }
 
     private func load() async {
-        do {
-            standing = try await session.client.get("/api/status")
+        async let relationship: Void = loadStanding()
+        async let feelings: Void = loadAffect()
+        _ = await (relationship, feelings)
+    }
+
+    private func loadStanding() async {
+        let token = UUID()
+        request = token
+        let address = session.baseURLString
+        if standingAddress != address {
+            standing = nil
             problem = nil
-        } catch HaruError.signedOut {
-            session.signedIn = false
-        } catch {
-            problem = error.localizedDescription
+            standingAddress = address
         }
+        do {
+            let value: Standing = try await session.client.get("/api/status")
+            guard request == token, address == session.baseURLString, !Task.isCancelled else { return }
+            standing = value
+            problem = nil
+        } catch {
+            guard request == token, address == session.baseURLString, !Task.isCancelled else { return }
+            if case HaruError.signedOut = error { session.signedIn = false }
+            problem = "Relationship status couldn’t be refreshed. Pull down to try again."
+        }
+    }
+
+    private func loadAffect() async {
+        do { try await affect.refresh(client: session.client) }
+        catch HaruError.signedOut { session.signedIn = false }
+        catch { /* The read state supplies a visible retry. */ }
     }
 
     private func tickOff(_ id: String) async {

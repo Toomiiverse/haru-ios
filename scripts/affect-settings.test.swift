@@ -2,7 +2,7 @@ import Foundation
 
 @main
 struct AffectSettingsTests {
-    static func main() async throws {
+    @MainActor static func main() async throws {
         let client = HaruClient(base: URL(string: CommandLine.arguments[1])!)
         let initial: AffectSettings = try await client.get("/api/affect/settings")
         precondition(initial.revision == 7 && initial.current.emotion == "curious")
@@ -39,6 +39,25 @@ struct AffectSettingsTests {
         } catch HaruError.signedOut { }
         let refreshed: AffectSettings = try await client.get("/api/affect/settings")
         precondition(refreshed.revision == 8)
+        let statusClient = HaruClient(base: URL(string: CommandLine.arguments[1] + "/status-test")!)
+        let status = AffectStatus()
+        let olderRead = Task { try await status.refresh(client: statusClient) }
+        try await Task.sleep(for: .milliseconds(80))
+        try await status.refresh(client: statusClient)
+        try await olderRead.value
+        precondition(status.snapshot?.current.emotion == "worried", "Late status replaced current feelings")
+        do {
+            try await status.refresh(client: statusClient)
+            fatalError("Status failure was swallowed")
+        } catch HaruError.server(let code, _) { precondition(code == 503) }
+        precondition(status.snapshot == nil && status.problem != nil && !status.loading,
+                     "Failed refresh left stale feelings presented as current")
+        try await status.refresh(client: statusClient)
+        precondition(status.snapshot?.enabled == false && status.snapshot?.current.episodes.isEmpty == true)
+        precondition(status.problem == nil && !status.loading, "Retry failed to recover status")
+        precondition(initial.current.responseDescription == "Ready to talk")
+        precondition(MoodDimension.all.map(\.key) == ["pleasantness", "activation", "tension", "energy", "sleepiness"])
+        print("Mood status: out-of-order reads, stale-data clearing, disabled/empty state and retry recovery passed.")
         print("Native affect transport: rich and legacy snapshots, 47 bundled faces, 42 feeling symbols/tints, exact revision-bound save, stale refusal, sign-out and explicit refresh passed.")
     }
 }

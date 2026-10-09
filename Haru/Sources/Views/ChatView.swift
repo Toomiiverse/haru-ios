@@ -1,3 +1,4 @@
+import Combine
 import PhotosUI
 import SwiftUI
 import UIKit
@@ -272,7 +273,7 @@ struct ChatView: View {
         VStack(alignment: .leading, spacing: 12) {
             Text("Status & mood").font(.headline)
             LabeledContent("Activity", value: state).font(.subheadline)
-            Nameplate(standing: standing, emotion: standing?.emotion ?? chat.emotion) { openStatus() }
+            MoodStatusSummary(asleep: standing?.asleep == true || chat.herAsleep)
             Button("View full status", systemImage: "heart.text.square") { openStatus() }
         }
         .padding(16)
