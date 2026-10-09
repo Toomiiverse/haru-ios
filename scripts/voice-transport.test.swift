@@ -11,7 +11,7 @@ struct VoiceTransportTests {
     static func main() async throws {
         let base = URL(string: CommandLine.arguments[1])!
         let client = HaruClient(base: base)
-        let download = client.speech("partial & exact?", emotion: "affectionate")
+        let download = client.speech("partial & exact?", emotion: "affectionate", seed: 314159)
         var iterator = download.parts.makeAsyncIterator()
         guard case .some(.format(let rate)) = try await iterator.next() else { fatalError("Missing format") }
         try require(rate == 24_000, "Wrong sample rate")
@@ -26,6 +26,9 @@ struct VoiceTransportTests {
         }
         try require(tail == Data([17, 23, 31, 47]), "Odd chunk boundary lost or duplicated bytes")
 
+        for seed in [0, 314159, 314159, 2_147_483_647] {
+            for try await _ in client.speech("seeded", emotion: "happy", seed: seed).parts {}
+        }
         var files = [Data]()
         for try await part in client.speech("fallback", emotion: nil).parts {
             guard case .file(let data) = part else { fatalError("Fallback was treated as PCM") }
