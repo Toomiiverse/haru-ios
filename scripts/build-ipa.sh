@@ -94,7 +94,7 @@ if [ "${HARU_BUILD_ONLY:-0}" != 1 ] && [ -n "${ASC_KEY_ID:-}" ] && [ -n "${ASC_I
   if printf '%s' "$ASC_KEY_P8" | grep -q "BEGIN PRIVATE KEY"; then printf '%s\n' "$ASC_KEY_P8" > "$key"; else printf '%s' "$ASC_KEY_P8" | base64 --decode > "$key"; fi
   # Earlier runs' development certificates go first, or the account fills up
   # and cloud signing refuses to make this run's (scripts/prune-dev-certs.mjs).
-  node scripts/prune-dev-certs.mjs
+  # Preserve existing certificates; let Xcode report any signing capacity issue.
   build_number="${GITHUB_RUN_NUMBER:-1}"
   auth=(-allowProvisioningUpdates -authenticationKeyPath "$key" -authenticationKeyID "$ASC_KEY_ID" -authenticationKeyIssuerID "$ASC_ISSUER_ID")
   xcodebuild \
