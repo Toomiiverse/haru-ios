@@ -14,6 +14,9 @@ enum MoodLook {
         case "surprised": return "exclamationmark.circle.fill"
         case "confused": return "questionmark.circle.fill"
         case "embarrassed": return "face.smiling.inverse"
+        case "bored", "unimpressed": return "ellipsis"
+        case "worried", "concerned": return "cloud.fill"
+        case "determined": return "scope"
         default: return "circle.fill"
         }
     }
@@ -28,6 +31,9 @@ enum MoodLook {
         case "thinking", "curious": return .teal
         case "smug": return .orange
         case "surprised", "confused", "embarrassed": return .purple
+        case "bored", "unimpressed": return .gray
+        case "worried", "concerned": return .blue
+        case "determined": return .orange
         default: return .secondary
         }
     }
