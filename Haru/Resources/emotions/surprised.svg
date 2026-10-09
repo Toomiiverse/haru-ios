@@ -44,8 +44,8 @@
   A 0.28 0.27 -13.5 0 0 652.84 193.54
   Z"
 />
-<rect x="-6.71" y="-48.46" transform="translate(1078.51,220.75) rotate(21.9)" width="13.42" height="96.92" rx="6.63"/>
-<rect x="-49.28" y="-6.62" transform="translate(1129.45,267.02) rotate(-30.4)" width="98.56" height="13.24" rx="6.55"/>
+<rect data-reaction-mark="ray" x="-6.71" y="-48.46" transform="translate(1078.51,220.75) rotate(21.9)" width="13.42" height="96.92" rx="6.63"/>
+<rect data-reaction-mark="ray" x="-49.28" y="-6.62" transform="translate(1129.45,267.02) rotate(-30.4)" width="98.56" height="13.24" rx="6.55"/>
 <path d="
   M 320.22 412.96
   Q 304.98 406.64 288.67 406.81
@@ -122,7 +122,7 @@
   Q 982.21 563.17 970.88 595.45
   Z"
 />
-<rect x="-43.49" y="-6.69" transform="translate(1136.95,335.27) rotate(6.4)" width="86.98" height="13.38" rx="6.58"/>
+<rect data-reaction-mark="ray" x="-43.49" y="-6.69" transform="translate(1136.95,335.27) rotate(6.4)" width="86.98" height="13.38" rx="6.58"/>
 <path d="
   M 714.97 761.51
   C 708.14 759.66 700.35 758.13 694.37 756.32

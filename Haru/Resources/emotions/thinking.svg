@@ -142,9 +142,9 @@
   Q 702.05 744.72 716.45 753.18
   Z"
 />
-<circle cx="1084.18" cy="449.44" r="12.74"/>
-<circle cx="1133.48" cy="449.48" r="12.62"/>
-<circle cx="1182.75" cy="449.42" r="12.64"/>
+<circle data-reaction-mark="dot" cx="1084.18" cy="449.44" r="12.74"/>
+<circle data-reaction-mark="dot" cx="1133.48" cy="449.48" r="12.62"/>
+<circle data-reaction-mark="dot" cx="1182.75" cy="449.42" r="12.64"/>
 </g>
 <g fill="#2e2c2f">
 <path d="
