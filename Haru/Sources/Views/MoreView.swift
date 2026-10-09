@@ -26,7 +26,6 @@ struct MoreView: View {
     var body: some View {
         NavigationStack {
             List {
-                Section { NavigationLink("Conversation settings") { LocalModelSettingsView() } }
                 herStage
                 talking
                 notifications

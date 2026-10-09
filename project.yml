@@ -78,7 +78,6 @@ targets:
               - haru
         NSCalendarsFullAccessUsageDescription: "To read and manage calendar events only when you explicitly ask Haru. Deletion needs confirmation."
         NSContactsUsageDescription: "To look up a contact you name. Haru never uploads your entire address book."
-        NSSpeechRecognitionUsageDescription: "To transcribe your words on this iPhone for local conversations with Haru."
         NSMicrophoneUsageDescription: "So you can talk to her instead of typing."
         NSLocationWhenInUseUsageDescription: "So she knows roughly where you are, if you let her. Off unless you switch it on."
         # "With the app closed too" under More (Locator.swift): significant changes and visits only.
@@ -107,17 +106,12 @@ targets:
       # sherpa-onnx, fetched by scripts/build-ipa.sh — see WakeSpotter.swift.
       - framework: Vendor/SherpaOnnxC.xcframework
         embed: true
-      - framework: Vendor/llama.xcframework
-        embed: true
-      - sdk: libc++.tbd
     settings:
       base:
         # Apple registered the App ID with the Team ID as a suffix (2026-09-04);
         # the app matches it. The BG task identifier below is unrelated to this.
         PRODUCT_BUNDLE_IDENTIFIER: com.toomiiverse.haru.JF3928RYMD
         PRODUCT_NAME: Haru
-        SWIFT_OBJC_BRIDGING_HEADER: Haru/Sources/Services/DolphinBridge.h
-        CLANG_CXX_LANGUAGE_STANDARD: c++17
         CODE_SIGN_STYLE: Automatic
         CODE_SIGN_ENTITLEMENTS: Haru/Haru.entitlements
         # Set by the signed build from the APPLE_TEAM_ID secret; empty for the unsigned one.
@@ -237,26 +231,7 @@ targets:
         GENERATE_INFOPLIST_FILE: "NO"
         SKIP_INSTALL: "YES"
         SUPPORTS_MACCATALYST: "NO"
-  HaruUITests:
-    type: bundle.ui-testing
-    platform: iOS
-    sources: [HaruUITests]
-    dependencies:
-      - target: Haru
-    settings:
-      base:
-        PRODUCT_BUNDLE_IDENTIFIER: com.toomiiverse.haru.uitests
-        GENERATE_INFOPLIST_FILE: YES
-        TEST_TARGET_NAME: Haru
 schemes:
-  HaruUITests:
-    build:
-      targets:
-        Haru: all
-        HaruUITests: [test]
-    test:
-      config: Debug
-      targets: [HaruUITests]
   Haru:
     build:
       targets:

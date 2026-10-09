@@ -5,12 +5,7 @@
 set -euo pipefail
 cd "$(dirname "$0")/.."
 
-# Qualification builds must be possible even on runners with signing secrets.
-# The commit trailer also works with the existing workflow_dispatch workflow.
 if git log -1 --format=%B | grep -qx 'Haru-Build-Only: true'; then HARU_BUILD_ONLY=1; fi
-if git log -1 --format=%B | grep -qx 'Haru-Dolphin-Smoke: true'; then export HARU_DOLPHIN_SMOKE=1; fi
-
-if git log -1 --format=%B | grep -qx 'Haru-Umbral-Smoke: true'; then export HARU_UMBRAL_SMOKE=1; fi
 
 # The newest Xcode on the box, else whatever is selected. App Store Connect
 # refuses uploads built with anything older than the iOS 26 SDK (Xcode 26),
@@ -25,6 +20,7 @@ node --test scripts/verify-testflight.test.mjs scripts/stage.test.mjs
 bash scripts/test-voice-transport.sh
 bash scripts/test-chat-delivery.sh
 bash scripts/test-stage-recovery.sh
+bash scripts/test-retired-model-cleanup.sh
 
 command -v xcodegen >/dev/null || brew install xcodegen
 
@@ -44,14 +40,6 @@ fetch() { # url, file, sha256
   echo "$3  $2" | shasum -a 256 -c -
 }
 mkdir -p Vendor
-fetch https://github.com/ggml-org/llama.cpp/releases/download/b5046/llama-b5046-xcframework.zip \
-  Vendor/llama-b5046.zip c19be78b5f00d8d29a25da41042cb7afa094cbf6280a225abe614b03b20029ab
-rm -rf Vendor/llama.xcframework Vendor/llama-extract
-mkdir -p Vendor/llama-extract
-unzip -q Vendor/llama-b5046.zip -d Vendor/llama-extract
-mv Vendor/llama-extract/build-apple/llama.xcframework Vendor/llama.xcframework
-rm -rf Vendor/llama-extract
-bash scripts/test-dolphin.sh
 fetch "$SHERPA_URL" Vendor/sherpa-onnx.xcframework.zip "$SHERPA_SHA"
 rm -rf Vendor/SherpaOnnxC.xcframework
 unzip -q Vendor/sherpa-onnx.xcframework.zip -d Vendor
@@ -73,10 +61,6 @@ fetch "https://github.com/k2-fsa/sherpa-onnx/releases/download/speaker-recongiti
 cp "Vendor/$SPK_MODEL" Haru/Resources/kws/
 
 xcodegen generate
-
-if git log -1 --format=%B | grep -qx 'Haru-UI-Smoke: true'; then
-  bash scripts/test-local-ui.sh
-fi
 
 # Signed, and straight to TestFlight, when the App Store Connect key is in the
 # environment (the workflow passes the repository secrets ASC_KEY_ID,

@@ -249,18 +249,6 @@ final class ChatStore {
         }
     }
 
-
-    /// A neutral task service. Local prompts, notes, history and speech never enter this request.
-    func taskForLocalConversation(_ text: String, requestID: String) async throws -> LocalTaskResult {
-        guard session.signedIn == true else { throw LocalChatError.message("Sign in to Haru’s server for this task.") }
-        guard !busy, call == nil else { throw LocalChatError.message("Finish the current server reply or call first.") }
-        guard staged.isEmpty else { throw LocalChatError.message("Attachments are not supported by local conversation yet. Remove the attachment or use server conversation in Settings.") }
-        busy = true
-        defer { busy = false }
-        stage.attend("thinking", ms: 20_000)
-        return try await client.post("/api/local/task", ["text": .string(text), "requestId": .string(requestID)])
-    }
-
     // MARK: Saying something
 
     /// Sent while she is still answering — the composer has already let go

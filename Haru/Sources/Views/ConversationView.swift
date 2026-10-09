@@ -5,14 +5,13 @@ import UniformTypeIdentifiers
 struct ConversationView: View {
     @Environment(Session.self) private var session
     @Environment(ChatStore.self) private var chat
-    @Environment(LocalConversationStore.self) private var local
     @Environment(\.scenePhase) private var phase
     @State private var roleplay = RoleplayStore()
     @State private var chooseCharacter = false
 
     var body: some View {
         VStack(spacing: 0) {
-            if !local.selected { Picker("Conversation mode", selection: Binding(
+            Picker("Conversation mode", selection: Binding(
                 get: { roleplay.state?.mode ?? "ai" },
                 set: { mode in
                     if mode == "character", roleplay.state?.character == nil { chooseCharacter = true }
@@ -25,17 +24,16 @@ struct ConversationView: View {
             .pickerStyle(.segmented)
             .padding(.horizontal, 16)
             .padding(.vertical, 8)
-            .disabled(roleplay.waiting || chat.busy || chat.call != nil || chat.micOn || local.unavailable)
-            .accessibilityHint("Choose Haru or a character")
-            }
-            if !local.selected && roleplay.state?.mode == "character" {
+            .disabled(roleplay.state == nil || roleplay.waiting || chat.busy || chat.call != nil || chat.micOn)
+            .accessibilityHint("Switch between Haru and your custom characters")
+            if roleplay.state?.mode == "character" {
                 CharacterChatView(store: roleplay, chooseCharacter: $chooseCharacter)
             } else { ChatView() }
         }
         .background(Color("LaunchBackground"))
-        .task(id: session.baseURLString) { if !local.selected { await roleplay.load(session.client) } }
+        .task(id: session.baseURLString) { await roleplay.load(session.client) }
         .onChange(of: phase) { _, now in
-            if now == .active && !local.selected { Task { await roleplay.load(session.client) } }
+            if now == .active { Task { await roleplay.load(session.client) } }
         }
         .sheet(isPresented: $chooseCharacter) { CharacterPicker(store: roleplay) }
         .alert("Character mode", isPresented: Binding(get: { roleplay.problem != nil }, set: { if !$0 { roleplay.problem = nil } })) {

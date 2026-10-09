@@ -7,9 +7,10 @@ struct HaruApp: App {
     @State private var session: Session
     @State private var chat: ChatStore
     @State private var locator: Locator
-    @State private var local = LocalConversationStore()
 
     init() {
+        do { try RetiredModelCleanup.run() }
+        catch { NSLog("Retired conversation model cleanup will retry next launch: %@", error.localizedDescription) }
         let session = Session()
         _session = State(initialValue: session)
         _chat = State(initialValue: ChatStore(session: session))
@@ -26,8 +27,6 @@ struct HaruApp: App {
         .onChange(of: phase) { _, now in
             switch now {
             case .background:
-                local.download.pause()
-                Task { await local.releaseMemory() }
                 PhoneTools.shared.activity(foreground: false)
                 Refresh.schedule()
                 locator.rest()
@@ -41,7 +40,7 @@ struct HaruApp: App {
                 Task { await Push.sync(session) }
                 takeAsk()
                 chat.refreshLive()
-                if !local.selected { Task { await chat.standbyOnActive() } }
+                Task { await chat.standbyOnActive() }
             default: break
             }
         }
@@ -52,28 +51,8 @@ struct HaruApp: App {
                 .environment(session)
                 .environment(chat)
                 .environment(locator)
-                .environment(local)
                 .environment(Navigator.shared)
-                .onAppear {
-                    local.serverTask = { text, id in try await chat.taskForLocalConversation(text, requestID: id) }
-                    local.speak = { text in if session.signedIn == true { chat.say(text, emotion: nil) } }
-                    local.loadPersonality = {
-                        struct Profile: Decodable { let version: Int; let instructions: String }
-                        let profile: Profile = try await session.client.post("/api/local/profile")
-                        guard profile.version == 1 else { throw LocalChatError.message("Unsupported local profile version.") }
-                        return profile.instructions
-                    }
-                }
                 .onOpenURL { Navigator.shared.open($0) }
-                .onReceive(NotificationCenter.default.publisher(for: UIApplication.didReceiveMemoryWarningNotification)) { _ in
-                    Task { await local.releaseMemory() }
-                }
-                .onChange(of: local.selected) { _, selected in
-                    if selected {
-                        _ = chat.tapToHush()
-                        Task { await chat.setStandby(false) }
-                    } else { Task { await local.releaseMemory() } }
-                }
                 // A control's intent can land after the app is already in front.
                 .onReceive(NotificationCenter.default.publisher(for: Shared.asked)) { _ in
                     if phase == .active || Shared.waitingAsk == .hangUp { takeAsk() }
@@ -89,7 +68,7 @@ struct HaruApp: App {
         case .call?:
             Navigator.shared.tab = .chat
             Navigator.shared.wantsCall = true
-        case .standbyOn?: Task { await local.releaseMemory(); await chat.setStandby(true) }
+        case .standbyOn?: Task { await chat.setStandby(true) }
         case .standbyOff?: Task { await chat.setStandby(false) }
         case .hangUp?: chat.endCall()
         case nil: break
