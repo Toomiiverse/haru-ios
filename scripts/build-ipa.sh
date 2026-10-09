@@ -7,14 +7,8 @@ cd "$(dirname "$0")/.."
 
 if git log -1 --format=%B | grep -qx 'Haru-Build-Only: true'; then HARU_BUILD_ONLY=1; fi
 
-# The newest Xcode on the box, else whatever is selected. App Store Connect
-# refuses uploads built with anything older than the iOS 26 SDK (Xcode 26),
-# and the macos-15 image's default is still 16.4. (Pinning 16.2 once failed in
-# actool for want of a matching simulator runtime; newest avoids that too.)
-if compgen -G "/Applications/Xcode_*.app" >/dev/null; then
-  newest=$(ls -d /Applications/Xcode_*.app | sort -V | tail -1)
-  sudo xcode-select -s "$newest"
-fi
+# Pin the stable release; newer beta SDKs may be rejected by App Store Connect.
+export DEVELOPER_DIR=/Applications/Xcode_27.0.app/Contents/Developer
 xcodebuild -version
 sdk_version=$(xcrun --sdk iphoneos --show-sdk-version)
 if [ "${sdk_version%%.*}" -lt 27 ]; then
