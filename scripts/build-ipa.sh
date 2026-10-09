@@ -16,11 +16,17 @@ if compgen -G "/Applications/Xcode_*.app" >/dev/null; then
   sudo xcode-select -s "$newest"
 fi
 xcodebuild -version
+sdk_version=$(xcrun --sdk iphoneos --show-sdk-version)
+if [ "${sdk_version%%.*}" -lt 27 ]; then
+  echo "Haru CarPlay requires the iOS 27 SDK. Use the xcode-27 runner." >&2
+  exit 1
+fi
 node --test scripts/verify-testflight.test.mjs scripts/stage.test.mjs
 bash scripts/test-voice-transport.sh
 bash scripts/test-chat-delivery.sh
 bash scripts/test-stage-recovery.sh
 bash scripts/test-retired-model-cleanup.sh
+bash scripts/test-drive.sh
 
 command -v xcodegen >/dev/null || brew install xcodegen
 
@@ -99,6 +105,7 @@ if [ "${HARU_BUILD_ONLY:-0}" != 1 ] && [ -n "${ASC_KEY_ID:-}" ] && [ -n "${ASC_I
     -quiet
   no_static_frameworks build/Haru.xcarchive/Products/Applications/Haru.app || exit 1
   node scripts/check-stage-resources.mjs build/Haru.xcarchive/Products/Applications/Haru.app
+  python3 scripts/check-carplay-signing.py build/Haru.xcarchive/Products/Applications/Haru.app
   cat > build/ExportOptions.plist <<PLIST
 <?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">

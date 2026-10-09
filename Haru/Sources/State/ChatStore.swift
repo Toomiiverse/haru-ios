@@ -174,7 +174,16 @@ final class ChatStore {
             self?.call?.playbackEstimate(turn:turn,id:id,renderedAt:rendered,outputMs:output,primeMs:prime,underruns:underruns)
         }
         audio.onInterruption = { [weak self] began, _ in
-            guard let self, self.standby else { return }
+            guard let self else { return }
+            if self.inCarPlay {
+                if began {
+                    self.onCarPlayInterruption?()
+                    self.stopDrivingAudio()
+                    self.notice = "Conversation interrupted. Tap Talk to resume."
+                }
+                return
+            }
+            guard self.standby else { return }
             if began {
                 self.standbyPaused = true
                 if self.call != nil { self.endCall() }
@@ -342,6 +351,7 @@ final class ChatStore {
         var delivery = ChatSpeechDelivery()
         do {
             for try await event in stream {
+                try Task.checkCancellation()
                 if let error = event.error {
                     failure = error
                 } else if event.text == "\u{FFFD}" {
@@ -368,6 +378,9 @@ final class ChatStore {
                     ignored = event.ignored ?? false
                 }
             }
+        } catch is CancellationError {
+            hush()
+            return
         } catch HaruError.signedOut {
             session.signedIn = false
             return
@@ -375,7 +388,7 @@ final class ChatStore {
             failure = error.localizedDescription
         }
 
-        guard let i = entries.firstIndex(where: { $0.id == id }) else { return }
+        guard !Task.isCancelled, let i = entries.firstIndex(where: { $0.id == id }) else { return }
         if let failure {
             entries[i] = Entry(id: id, kind: .system, text: failure)
             if let talk { act(talk.replied(now, willSpeak: false)) }
@@ -640,6 +653,42 @@ final class ChatStore {
 
     // MARK: On a call
 
+    var inCarPlay = false
+    var onCarPlayInterruption: (() -> Void)?
+    private var drivingBriefingTask: Task<Bool, Never>?
+
+    /// Uses the normal chat/voice transport without consuming the phone composer's draft or attachments.
+    func drivingBriefing() async -> Bool {
+        guard !busy, !micOn, drivingBriefingTask == nil else { return false }
+        let task = Task { @MainActor in
+            self.busy = true
+            defer { self.busy = false }
+            let id = UUID().uuidString
+            self.entries.append(Entry(id: UUID().uuidString, kind: .me, text: DriveState.briefing))
+            self.entries.append(Entry(id: id, kind: .her, text: "", waiting: true))
+            await self.run(self.client.stream("/api/chat/stream", ["text": .string(DriveState.briefing)]), into: id)
+            let deadline = Date().addingTimeInterval(60)
+            while self.draining || self.audio.speaking {
+                if Task.isCancelled || Date() > deadline { self.hush(); return false }
+                do { try await Task.sleep(for: .milliseconds(100)) } catch { self.hush(); return false }
+            }
+            return !Task.isCancelled && self.session.signedIn == true
+        }
+        drivingBriefingTask = task
+        let result = await task.value
+        drivingBriefingTask = nil
+        return result
+    }
+
+    func stopDrivingAudio() {
+        drivingBriefingTask?.cancel()
+        endCall()
+        stopTalking()
+        hush()
+        try? audio.listen(false)
+        audio.releaseSession()
+    }
+
     /// Whether the mic button is lit: a call, or the ordinary talk mode.
     var micOn: Bool { call != nil || talk != nil }
 
@@ -715,11 +764,15 @@ final class ChatStore {
     /// the hearing, the deciding and the saying. Her words still come from
     /// her own brain, through the server's hook.
     func startCall() async {
-        guard call == nil, talk == nil else { return }
+        guard !inCarPlay || PhoneTools.shared.carPlayActive else { return }
+        guard call == nil, talk == nil, callState != .connecting else { return }
+        callState = .connecting
+        defer { if call == nil { callState = .off } }
         guard await Audio.allowed() else {
             notice = "The microphone is switched off for Haru in Settings."
             return
         }
+        guard !Task.isCancelled else { return }
         audio.echoCancelling = UserDefaults.standard.object(forKey: "talk.echoCancel") as? Bool ?? true
         do {
             try audio.listen(true)
@@ -845,13 +898,14 @@ final class ChatStore {
     /// Switched on or off from More. On needs the app open: iOS lets a
     /// recording that began in the foreground carry on with the phone locked,
     /// but never lets one begin there.
-    func setStandby(_ on: Bool) async {
+    func setStandby(_ on: Bool, persist: Bool = true) async {
+        guard !on || !inCarPlay else { return }
         // Whatever comes of it, the control's switch shows what is true (Controls.swift).
         defer {
             Shared.standby = standby
             if #available(iOS 18.0, *) { ControlCenter.shared.reloadControls(ofKind: "com.toomiiverse.haru.control.standby") }
         }
-        UserDefaults.standard.set(on, forKey: "standby.on")
+        if persist { UserDefaults.standard.set(on, forKey: "standby.on") }
         if !on {
             standby = false
             standbyPaused = false
@@ -913,6 +967,7 @@ final class ChatStore {
     /// The app is open again: standby back on if it was wanted, and listening
     /// again if something had taken the microphone.
     func standbyOnActive() async {
+        guard !inCarPlay else { return }
         let wanted = UserDefaults.standard.bool(forKey: "standby.on")
         if wanted, !standby { await setStandby(true); return }
         if standby, standbyPaused || !audio.listening { resumeStandby(notifyIfNot: false) }
@@ -1140,6 +1195,7 @@ final class ChatStore {
     /// then on she listens for "Haru" or "Hey Haru" and for anything said
     /// while she is awake, and speaking over her cuts her off.
     func startTalking() async {
+        guard !inCarPlay || PhoneTools.shared.carPlayActive else { return }
         guard talk == nil else { return }
         guard await Audio.allowed() else {
             notice = "The microphone is switched off for Haru in Settings."
