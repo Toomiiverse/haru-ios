@@ -18,6 +18,17 @@ struct AffectSettings: Decodable, Sendable {
         let episodes: [Episode]
         let mood: [String: Double]?
 
+        /// A display row per feeling, preserving its strongest reported episode.
+        /// Repeated episodes are never added together or written back into Core.
+        var displayFeelings: [Episode] {
+            Dictionary(grouping: episodes, by: \.emotion)
+                .values.compactMap { $0.max { $0.intensity < $1.intensity } }
+                .sorted {
+                    if $0.intensity == $1.intensity { return $0.emotion < $1.emotion }
+                    return $0.intensity > $1.intensity
+                }
+        }
+
         var responseDescription: String {
             switch disposition {
             case "engage": return "Ready to talk"

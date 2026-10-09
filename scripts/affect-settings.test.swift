@@ -25,6 +25,25 @@ struct AffectSettingsTests {
             precondition(MoodLook.symbol(for: String(feeling)) != "circle.fill")
             precondition(MoodLook.tint(for: String(feeling)) != .secondary)
         }
+        // The reported screen: eight Longing episodes crowded out Relief and Interest.
+        let repeated = [0.14, 0.12, 0.14, 0.14, 0.14, 0.14, 0.12, 0.14].map {
+            AffectSettings.Current.Episode(emotion: "longing", intensity: $0)
+        } + [.init(emotion: "interest", intensity: 0.4), .init(emotion: "relief", intensity: 0.5)]
+        let screen = AffectSettings.Current(emotion: "sleepy", disposition: "engage", episodes: repeated, mood: nil)
+        precondition(screen.displayFeelings.map(\.emotion) == ["relief", "interest", "longing"])
+        precondition(screen.displayFeelings.map(\.intensity) == [0.5, 0.4, 0.14], "Repeats inflated feeling intensity")
+        precondition(screen.episodes.count == 10, "Display grouping altered the raw episodes")
+        precondition(screen.displayFeelings.prefix(3).count == 3 && screen.displayFeelings.count == 3,
+                     "Quick menu claimed more feelings just because episodes repeated")
+        let tied = repeated + [.init(emotion: "sadness", intensity: 0.4)]
+        let more = AffectSettings.Current(emotion: "neutral", disposition: "engage", episodes: tied, mood: nil)
+        let reordered = AffectSettings.Current(emotion: "neutral", disposition: "engage", episodes: Array(tied.reversed()), mood: nil)
+        precondition(more.displayFeelings.map(\.emotion) == ["relief", "interest", "sadness", "longing"])
+        precondition(more.displayFeelings.map(\.emotion) == reordered.displayFeelings.map(\.emotion),
+                     "Equal-strength feelings changed order on refresh")
+        precondition(Array(more.displayFeelings.prefix(3)).map(\.emotion) == ["relief", "interest", "sadness"])
+        precondition(legacy.current.displayFeelings.isEmpty)
+        print("Distinct feelings: screenshot duplicates, strongest intensity, top three, stable ties and empty state passed.")
         let command = AffectSettingsSave(expectedRevision: initial.revision,
                                         preferences: ["reactToConversation": false, "allowDecline": true])
         let saved = try await client.saveAffectSettings(command)

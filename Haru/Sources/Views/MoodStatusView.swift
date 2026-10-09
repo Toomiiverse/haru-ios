@@ -51,15 +51,22 @@ struct MoodStatusSections: View {
     let snapshot: AffectSettings
 
     var body: some View {
-        Section("Current feelings") {
+        let feelings = snapshot.current.displayFeelings
+        Section {
             if !snapshot.enabled {
                 Text("Emotion reactions are currently unavailable.").foregroundStyle(.secondary)
-            } else if snapshot.current.episodes.isEmpty {
+            } else if feelings.isEmpty {
                 Text("No strong feelings right now.").foregroundStyle(.secondary)
             } else {
-                ForEach(Array(snapshot.current.episodes.enumerated()), id: \.offset) { _, episode in
+                ForEach(feelings, id: \.emotion) { episode in
                     FeelingRow(episode: episode)
                 }
+            }
+        } header: {
+            Text("Current feelings")
+        } footer: {
+            if snapshot.enabled && !feelings.isEmpty {
+                Text("Each feeling appears once, at its strongest current intensity.")
             }
         }
         if let mood = snapshot.current.mood {
@@ -82,6 +89,7 @@ struct MoodStatusSummary: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
             if let snapshot = status.snapshot {
+                let feelings = snapshot.current.displayFeelings
                 let emotion = asleep ? "sleepy" : snapshot.current.emotion
                 Label(asleep ? "Asleep" : emotion.capitalized, systemImage: MoodLook.symbol(for: emotion))
                     .font(.headline).foregroundStyle(MoodLook.tint(for: emotion))
@@ -89,13 +97,13 @@ struct MoodStatusSummary: View {
                     .font(.subheadline).foregroundStyle(.secondary)
                 if !snapshot.enabled {
                     Text("Emotion reactions are currently unavailable.").font(.caption).foregroundStyle(.secondary)
-                } else if snapshot.current.episodes.isEmpty {
+                } else if feelings.isEmpty {
                     Text("No strong feelings right now.").font(.caption).foregroundStyle(.secondary)
                 } else {
-                    ForEach(Array(snapshot.current.episodes.prefix(3).enumerated()), id: \.offset) { _, episode in
+                    ForEach(Array(feelings.prefix(3)), id: \.emotion) { episode in
                         FeelingRow(episode: episode).font(.subheadline)
                     }
-                    if snapshot.current.episodes.count > 3 {
+                    if feelings.count > 3 {
                         Text("More feelings in full status").font(.caption).foregroundStyle(.secondary)
                     }
                 }
