@@ -6,11 +6,6 @@ uses (`electron/webserver.ts` in haru-desktop, reached over Tailscale at
 
 What it does:
 
-- **On-device conversation** — choose **On iPhone** in Chat to download Dolphin
-  Mistral 7B (3.02 GB) and stream replies locally, with separate saved history
-  and editable notes. Login is optional for this mode. Calls, tools and synced
-  memory stay on the existing server routes; read-aloud explicitly uses the
-  server voice. See [setup and qualification notes](docs/on-device-dolphin.md).
 - **Her, on stage** — the phone page's own SVG avatar, generated straight from
   the desktop code (`scripts/sync-avatar.mjs`) so the two never drift: her
   faces crossfade with her mood, she floats, blinks, glances about, looks

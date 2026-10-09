@@ -2,7 +2,6 @@ import SwiftUI
 
 struct LoginView: View {
     @Environment(Session.self) private var session
-    @Environment(LocalConversationStore.self) private var local
     @State private var server = ""
     @State private var username = ""
     @State private var password = ""
@@ -13,10 +12,6 @@ struct LoginView: View {
     var body: some View {
         NavigationStack {
             Form {
-                Section {
-                    Button("Chat on this iPhone") { local.selected = true }
-                    Text("Download Dolphin once to chat without a server connection.").font(.footnote).foregroundStyle(.secondary)
-                }
                 Section {
                     HStack {
                         Spacer()
