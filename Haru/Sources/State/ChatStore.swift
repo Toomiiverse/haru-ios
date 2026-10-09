@@ -87,6 +87,9 @@ final class ChatStore {
     }
     /// What she said while a tool ran, for the pill; nil once the reply comes.
     private(set) var callFiller: String?
+    /// Invalidates a delayed, read-only mood refresh when the call moves on.
+    private(set) var callMoodRevision = 0
+    private(set) var callMoodReady = false
     /// Whether a call can be placed, from the server; nil until asked.
     private(set) var eviStatus: EviStatus?
     /// Standby: the microphone open with the phone locked, listening on the
@@ -824,6 +827,8 @@ final class ChatStore {
         idleWatch?.invalidate()
         idleWatch = nil
         callState = .off
+        callMoodReady = false
+        callMoodRevision &+= 1
         callFiller = nil
         callReply = ""
         callReplyID = nil
@@ -845,6 +850,8 @@ final class ChatStore {
             endCall()
         case .heard(let text, let interim):
             guard !interim, !text.isEmpty else { return }
+            callMoodReady = false
+            callMoodRevision &+= 1
             // What Hume heard is what her brain is answering: their bubble.
             entries.append(Entry(id: UUID().uuidString, kind: .me, text: text))
             callReply = ""
@@ -880,6 +887,8 @@ final class ChatStore {
         case .voiceEnd:
             audio.endStream()
         case .turnEnded(let emotion):
+            callMoodReady = true
+            callMoodRevision &+= 1
             callFiller = nil
             if herAsleep {
                 stage.express("sleepy")
@@ -893,6 +902,8 @@ final class ChatStore {
             }
             if callState == .thinking || (callState == .speaking && !draining && !audio.speaking) { callState = .listening }
         case .interrupted:
+            callMoodReady = false
+            callMoodRevision &+= 1
             hush()
             callFiller = nil
             callState = .listening

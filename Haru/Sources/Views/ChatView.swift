@@ -83,7 +83,15 @@ struct ChatView: View {
             await refreshStanding()
         }
         .onChange(of: chat.lastReply?.id) { _, _ in
-            Task { await refreshStanding() }
+            if chat.call == nil { Task { await refreshStanding() } }
+        }
+        .task(id: chat.callMoodRevision) {
+            guard chat.callMoodReady, phase == .active else { return }
+            let revision = chat.callMoodRevision
+            // Core appraises feelings after replying. This never holds up audio.
+            do { try await Task.sleep(for: .seconds(5)) } catch { return }
+            guard !Task.isCancelled, chat.callMoodReady else { return }
+            await refreshStanding(callMoodRevision: revision)
         }
         .onReceive(poll) { _ in
             Task { await chat.askIfSheHasSomethingToSay() }
@@ -226,15 +234,27 @@ struct ChatView: View {
     /// title; the lift moves her down by a little over half the covered inset
     /// so she sits in the middle of what can be seen with air above her
     /// heart. Lift is a share of the stage, up positive, as the page reads it.
-    private func refreshStanding() async {
+    private func refreshStanding(callMoodRevision: Int? = nil) async {
+        let address = session.baseURLString
+        let expression = chat.emotion
+        let revisionAtStart = chat.callMoodRevision
         if let now: Standing = try? await session.client.get("/api/status") {
+            guard !Task.isCancelled, address == session.baseURLString,
+                  revisionAtStart == chat.callMoodRevision else { return }
+            if let revision = callMoodRevision {
+                guard revision == chat.callMoodRevision, chat.callMoodReady else { return }
+            }
             standing = now
             Shared.publish(standing: now)
             // Asleep: her sleeping face, held. Awake again: the face she rests on.
             let wasAsleep = chat.herAsleep
             chat.herAsleep = now.asleep == true
             if now.asleep == true { chat.stage.express("sleepy") }
-            else if wasAsleep { chat.emotion = now.emotion; chat.stage.express(now.face) }
+            else if wasAsleep || callMoodRevision != nil ||
+                        (!chat.busy && chat.call == nil && !chat.audio.speaking && chat.emotion == expression) {
+                chat.emotion = now.emotion
+                chat.stage.express(now.emotion)
+            }
         }
     }
 

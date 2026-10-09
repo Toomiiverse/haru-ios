@@ -272,18 +272,68 @@ struct PushPrefsPage: Decodable { let prefs: PushPrefs }
 
 // MARK: Her face
 
-/// The SVG face to show for a mood. The desktop's MOOD_TO_EMOTION, kept here so
+/// Presentation mapping for Core mood labels and the bundled SVG face names, so
 /// /api/expression's `emotion` and /api/status's `face` both find a file under
 /// /emotions/<name>.svg.
 enum Face {
     static let byMood: [String: String] = [
         "neutral": "neutral", "happy": "happy", "curious": "curious", "smug": "smug",
-        "annoyed": "annoyed", "bored": "annoyed", "sleepy": "sleepy", "surprised": "surprised",
-        "affectionate": "love", "embarrassed": "embarrassed", "determined": "excited", "worried": "sad",
+        "annoyed": "annoyed", "bored": "unimpressed", "sleepy": "sleepy", "surprised": "surprised",
+        "affectionate": "love", "embarrassed": "embarrassed", "determined": "determined", "worried": "concerned",
+    ]
+    static let expressions: Set<String> = [
+        "angry",
+        "annoyed",
+        "attentive",
+        "cold",
+        "concerned",
+        "confident",
+        "confused",
+        "content",
+        "crying",
+        "curious",
+        "determined",
+        "devious",
+        "disappointed",
+        "disbelief",
+        "disgusted",
+        "drowsy",
+        "drunk",
+        "embarrassed",
+        "excited",
+        "flirty",
+        "happy",
+        "laughing",
+        "love",
+        "nervous",
+        "neutral",
+        "pain",
+        "pensive",
+        "playful",
+        "pouty",
+        "rage",
+        "relieved",
+        "sad",
+        "scared",
+        "serious",
+        "shy",
+        "sick",
+        "silly",
+        "skeptical",
+        "sleepy",
+        "smug",
+        "snooty",
+        "startled",
+        "surprised",
+        "thinking",
+        "triumph",
+        "unimpressed",
+        "wink",
     ]
     static func file(for emotion: String) -> String {
-        if let mapped = byMood[emotion] { return mapped }
-        if byMood.values.contains(emotion) { return emotion }
+        let name = emotion.lowercased()
+        if let mapped = byMood[name] { return mapped }
+        if expressions.contains(name) { return name }
         return "neutral"
     }
 }

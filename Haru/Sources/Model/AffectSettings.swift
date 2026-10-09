@@ -16,6 +16,7 @@ struct AffectSettings: Decodable, Sendable {
         let emotion: String
         let disposition: String
         let episodes: [Episode]
+        let mood: [String: Double]?
     }
     let enabled: Bool
     let revision: Int

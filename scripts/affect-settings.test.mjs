@@ -6,7 +6,7 @@ let writes = 0;
 const snapshot = {
   version: 1, enabled: true, revision: 7,
   preferences: { reactToConversation: true, allowDecline: true },
-  current: { emotion: 'curious', disposition: 'engage', episodes: [{ emotion: 'interest', intensity: 0.4 }] },
+  current: { emotion: 'curious', disposition: 'engage', episodes: [{ emotion: 'interest', intensity: 0.4 }, { emotion: 'longing', intensity: 0.6 }], mood: { pleasantness: 0.7, activation: 0.6, tension: 0.2, energy: 0.8, sleepiness: 0.1 } },
   controls: [{ key: 'reactToConversation', label: 'React to conversation', description: 'A server-authored description.' }],
 };
 const server = http.createServer(async (req, res) => {

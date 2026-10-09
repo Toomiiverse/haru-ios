@@ -102,7 +102,7 @@ final class Stage: NSObject, WKNavigationDelegate {
     /// A Live2D expression by name — the one /api/expression chose — or nil to
     /// let her face go back to rest.
     func express(_ name: String?) {
-        run("window.haruStage.express(\(literal(name)))", preserving: "expression")
+        run("window.haruStage.express(\(literal(name.map { Face.file(for: $0) })))", preserving: "expression")
     }
 
     /// Something has her attention for a while: "typing", "talking", "thinking".

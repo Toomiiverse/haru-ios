@@ -15,6 +15,7 @@ struct AffectSettingsView: View {
                 Section("Current expression") {
                     Label(saved.current.emotion.capitalized,
                           systemImage: MoodLook.symbol(for: saved.current.emotion))
+                        .foregroundStyle(MoodLook.tint(for: saved.current.emotion))
                     LabeledContent("Response", value: saved.current.disposition.capitalized)
                     if !saved.enabled {
                         Text("Emotion reactions are currently unavailable on the server.")
@@ -24,8 +25,22 @@ struct AffectSettingsView: View {
                 if !saved.current.episodes.isEmpty {
                     Section("Current feelings") {
                         ForEach(Array(saved.current.episodes.enumerated()), id: \.offset) { _, episode in
-                            LabeledContent(episode.emotion.capitalized,
-                                           value: episode.intensity.formatted(.percent.precision(.fractionLength(0))))
+                            LabeledContent {
+                                Text(episode.intensity.formatted(.percent.precision(.fractionLength(0))))
+                            } label: {
+                                Label(episode.emotion.capitalized, systemImage: MoodLook.symbol(for: episode.emotion))
+                                    .foregroundStyle(MoodLook.tint(for: episode.emotion))
+                            }
+                        }
+                    }
+                }
+                if let mood = saved.current.mood {
+                    Section("Underlying mood") {
+                        ForEach(["pleasantness", "activation", "tension", "energy", "sleepiness"], id: \.self) { key in
+                            if let level = mood[key] {
+                                LabeledContent(key.capitalized,
+                                               value: level.formatted(.percent.precision(.fractionLength(0))))
+                            }
                         }
                     }
                 }

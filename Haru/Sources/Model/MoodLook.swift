@@ -4,36 +4,47 @@ import SwiftUI
 enum MoodLook {
     static func symbol(for emotion: String) -> String {
         switch emotion.lowercased() {
-        case "happy", "excited": return "sun.max.fill"
-        case "love", "affectionate": return "heart.fill"
-        case "angry", "annoyed": return "flame.fill"
-        case "sad": return "cloud.rain.fill"
+        case "happy", "excited", "joy", "hope", "optimism", "schadenfreude": return "sun.max.fill"
+        case "love", "affectionate", "affection", "trust", "gratitude", "admiration", "pity": return "heart.fill"
+        case "angry", "annoyed", "anger", "frustration", "resentment": return "flame.fill"
+        case "sad", "sadness", "hurt", "disappointment", "melancholy": return "cloud.rain.fill"
         case "sleepy": return "moon.zzz.fill"
-        case "thinking", "curious": return "brain.head.profile"
-        case "smug": return "sparkles"
-        case "surprised": return "exclamationmark.circle.fill"
-        case "confused": return "questionmark.circle.fill"
-        case "embarrassed": return "face.smiling.inverse"
-        case "bored", "unimpressed": return "ellipsis"
-        case "worried", "concerned": return "cloud.fill"
-        case "determined": return "scope"
+        case "thinking", "curious", "interest", "curiosity": return "brain.head.profile"
+        case "smug", "pride": return "sparkles"
+        case "surprised", "surprise": return "exclamationmark.circle.fill"
+        case "confused", "confusion": return "questionmark.circle.fill"
+        case "embarrassed", "embarrassment", "guilt", "shame", "humiliation": return "face.smiling.inverse"
+        case "bored", "unimpressed", "boredom", "disgust", "contempt": return "ellipsis"
+        case "worried", "concerned", "fear", "dread": return "cloud.fill"
+        case "determined", "determination": return "scope"
+        case "awe", "wonder": return "sparkles"
+        case "jealousy", "envy": return "eye.fill"
+        case "longing", "nostalgia": return "clock.arrow.circlepath"
+        case "serenity", "relief": return "leaf.fill"
+        case "playfulness": return "face.smiling.fill"
+        case "restlessness": return "waveform.path"
         default: return "circle.fill"
         }
     }
 
     static func tint(for emotion: String) -> Color {
         switch emotion.lowercased() {
-        case "happy", "excited": return .yellow
-        case "love", "affectionate": return .pink
-        case "angry", "annoyed": return .red
-        case "sad": return .blue
+        case "happy", "excited", "joy", "hope", "optimism", "schadenfreude": return .yellow
+        case "love", "affectionate", "affection", "trust", "gratitude", "admiration", "pity": return .pink
+        case "angry", "annoyed", "anger", "frustration", "resentment": return .red
+        case "sad", "sadness", "hurt", "disappointment", "melancholy": return .blue
         case "sleepy": return .indigo
-        case "thinking", "curious": return .teal
-        case "smug": return .orange
-        case "surprised", "confused", "embarrassed": return .purple
-        case "bored", "unimpressed": return .gray
-        case "worried", "concerned": return .blue
-        case "determined": return .orange
+        case "thinking", "curious", "interest", "curiosity": return .teal
+        case "smug", "pride": return .orange
+        case "surprised", "surprise", "confused", "confusion", "embarrassed", "embarrassment", "guilt", "shame", "humiliation": return .purple
+        case "bored", "unimpressed", "boredom", "disgust", "contempt": return .gray
+        case "worried", "concerned", "fear", "dread": return .blue
+        case "determined", "determination": return .orange
+        case "awe", "wonder": return .purple
+        case "jealousy", "envy": return .green
+        case "longing", "nostalgia", "restlessness": return .blue
+        case "serenity", "relief": return .teal
+        case "playfulness": return .mint
         default: return .secondary
         }
     }
