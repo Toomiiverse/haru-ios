@@ -56,9 +56,9 @@ enum CallState { case off, connecting, listening, thinking, speaking }
 
 @MainActor @Observable
 final class ChatStore {
-    var entries: [Entry] = []
+    var entries: [Entry] = [] { didSet { historyRefresh.invalidate() } }
     /// A message is on its way and the composer waits for it.
-    var busy = false
+    var busy = false { didSet { if busy != oldValue { historyRefresh.invalidate() } } }
     var loading = false
     var emotion = "neutral"
     /// She is asleep, from /api/status (ChatView keeps it): the stage holds
@@ -81,7 +81,7 @@ final class ChatStore {
     /// The conversation by voice: off, or where it stands.
     private(set) var talkState = TalkState.off
     /// The call, when the mic is on and she is being reached through Hume.
-    private(set) var call: EviCall?
+    private(set) var call: EviCall? { didSet { historyRefresh.invalidate() } }
     private(set) var callState = CallState.off {
         didSet { PhoneTools.shared.activity(callActive: callState == .listening || callState == .thinking || callState == .speaking) }
     }
@@ -124,6 +124,8 @@ final class ChatStore {
     /// Her reply on the call, as it arrives a sentence at a time, and its bubble.
     private var callReply = ""
     private var callReplyID: String?
+    private var callGeneration = UUID()
+    private let historyRefresh = TranscriptRefreshGate()
     private var wake: NameSpotter?
     /// Which ears are listening for her name, for the More screen.
     private(set) var wakeEngine = ""
@@ -233,11 +235,20 @@ final class ChatStore {
 
     // MARK: The day
 
-    func load() async {
+    func load(completedReply: String? = nil) async {
+        guard call == nil, !busy || completedReply != nil else { return }
+        let ticket = historyRefresh.begin()
+        let client = self.client
         loading = true
-        defer { loading = false }
+        defer { if historyRefresh.isLatest(ticket) { loading = false } }
+        func isCurrent() -> Bool {
+            historyRefresh.accepts(ticket) && self.client.base == client.base && call == nil
+        }
         do {
             let page: ChatPage = try await client.get("/api/chat")
+            guard isCurrent() else { return }
+            // Keep the completed bubble if a server snapshot predates its commit.
+            if let completedReply, !page.messages.contains(where: { $0.role == "assistant" && $0.content == completedReply }) { return }
             entries = page.messages.enumerated().map { n, m in
                 Entry(
                     id: m.id ?? "line-\(n)",
@@ -252,9 +263,9 @@ final class ChatStore {
                 )
             }
         } catch HaruError.signedOut {
-            session.signedIn = false
+            if isCurrent() { session.signedIn = false }
         } catch {
-            notice = error.localizedDescription
+            if isCurrent() { notice = error.localizedDescription }
         }
     }
 
@@ -349,6 +360,7 @@ final class ChatStore {
         var failure: String?
         var begun = false
         var delivery = ChatSpeechDelivery()
+        let speechSeed = Int.random(in: 0...2_147_483_647)
         do {
             for try await event in stream {
                 try Task.checkCancellation()
@@ -371,7 +383,7 @@ final class ChatStore {
                     paint(id, said, waiting: false)
                 } else if let sentence = event.sentence {
                     for line in delivery.receive(sentence, emotion: event.emotion) {
-                        say(line.text, emotion: line.emotion)
+                        say(line.text, emotion: line.emotion, seed: speechSeed)
                     }
                 } else if event.done == true {
                     reply = event.reply
@@ -408,13 +420,13 @@ final class ChatStore {
         // Sentence events carry the server's delivery; visible text is never
         // voiced a second time. Older servers without events use one final take.
         for line in delivery.finish(fallbackText: final) {
-            say(line.text, emotion: line.emotion)
+            say(line.text, emotion: line.emotion, seed: speechSeed)
         }
         drain()
         Task { await express(final) }
         // The reply's id — what a thumb or a retry needs — only exists on the
         // server. A quiet reload picks it up, and anything she added since.
-        await load()
+        await load(completedReply: final)
     }
 
     private func paint(_ id: String, _ text: String, waiting: Bool) {
@@ -459,9 +471,9 @@ final class ChatStore {
     /// line plays when the one before it ends, after `gap` milliseconds of
     /// breath — a sentence's worth by default. Two lines run together sound
     /// like one person reading; a pause between them sounds like one talking.
-    func say(_ text: String, emotion: String?, gap: Int = 280) {
+    func say(_ text: String, emotion: String?, gap: Int = 280, seed: Int? = nil) {
         // 503 when her voice is switched off for the web: the right amount of fuss is none.
-        lines.append((gap: gap, fetch: .stream(client.speech(text, emotion: emotion))))
+        lines.append((gap: gap, fetch: .stream(client.speech(text, emotion: emotion, seed: seed))))
         if !draining && !audio.speaking { drain() }
     }
 
@@ -783,8 +795,13 @@ final class ChatStore {
         callState = .connecting
         callReply = ""
         callReplyID = nil
+        let generation = UUID()
+        callGeneration = generation
         let call = EviCall(client: client) { [weak self] event in
-            Task { @MainActor in self?.handleCall(event) }
+            Task { @MainActor in
+                guard let self, self.callGeneration == generation else { return }
+                self.handleCall(event)
+            }
         }
         self.call = call
         audio.stream(true)
@@ -795,6 +812,7 @@ final class ChatStore {
     func endCall() {
         defer { if standby { Task { await refreshEvi(); applySleep() } } }
         guard let call else { return }
+        callGeneration = UUID()
         audio.stream(false)
         call.stop()
         self.call = nil

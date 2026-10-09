@@ -85,7 +85,9 @@ struct HaruClient: Sendable {
     }
 
     func get<T: Decodable>(_ path: String) async throws -> T {
-        let (data, response) = try await session.data(for: request(path, method: "GET"))
+        var req = request(path, method: "GET")
+        if path == "/api/chat" { req.cachePolicy = .reloadIgnoringLocalCacheData }
+        let (data, response) = try await session.data(for: req)
         try Self.check(response, data)
         return try JSONDecoder().decode(T.self, from: data)
     }
@@ -136,12 +138,13 @@ struct HaruClient: Sendable {
 
     /// Breeze's first PCM reaches the player immediately. Servers or voices
     /// without PCM support still return a regular audio file on this route.
-    func speech(_ text: String, emotion: String?) -> SpeechDownload {
+    func speech(_ text: String, emotion: String?, seed: Int? = nil) -> SpeechDownload {
         let (parts, continuation) = AsyncThrowingStream<SpeechPart, Error>.makeStream()
         let task = Task {
             do {
                 var query = ["text": text, "format": "pcm"]
                 if let emotion { query["emotion"] = emotion }
+                if let seed { query["seed"] = String(seed) }
                 var req = request("/api/speak", method: "GET", query: query)
                 req.setValue("*/*", forHTTPHeaderField: "Accept")
                 let (bytes, response) = try await session.bytes(for: req)
