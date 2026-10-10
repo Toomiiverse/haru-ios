@@ -116,6 +116,7 @@ struct MoreView: View {
 
     private var talking: some View {
         Section {
+            NavigationLink("My voice · conversation filtering") { SpeakerProfileView() }
             LabeledContent("Calls", value: callLine)
             Toggle("Standby: “Hey Haru” with the phone locked", isOn: Binding(
                 get: { chat.standby },
@@ -132,17 +133,17 @@ struct MoreView: View {
                 LabeledContent("Say “Hey Haru”", value: "take \(take + 1) of \(VoiceGate.takes)")
                 Button("Stop") { chat.cancelEnrolment() }
             } else {
-                LabeledContent("Your voice", value: chat.voiceKnown ? "\(chat.voiceTakes) takes" + (chat.strangerLine.isEmpty ? "" : " · \(chat.strangerLine)") : "not taught")
-                Button(chat.voiceKnown ? "Teach her your voice again" : "Teach her your voice") { Task { await chat.startEnrolment() } }
+                LabeledContent("Standby wake voice", value: chat.voiceKnown ? "\(chat.voiceTakes) takes" + (chat.strangerLine.isEmpty ? "" : " · \(chat.strangerLine)") : "not taught")
+                Button(chat.voiceKnown ? "Teach standby voice again" : "Teach standby voice") { Task { await chat.startEnrolment() } }
                 if chat.voiceKnown {
                     Toggle("Only my voice wakes her", isOn: Binding(get: { chat.onlyMyVoice }, set: { chat.onlyMyVoice = $0 }))
-                    Button("Forget my voice", role: .destructive) { chat.forgetVoice() }
+                    Button("Forget standby voice", role: .destructive) { chat.forgetVoice() }
                 }
             }
         } header: {
             Text("Talking")
         } footer: {
-            Text("Tap the mic and ask: she listens for one question, writes it down and answers as she does a message, in her voice, and the mic closes itself. Hold the mic for a call: she listens, decides when you've finished, lets you talk over her, and answers a sentence at a time. Typed messages get her usual voice either way. Echo cancelling on: she can't hear herself through the speaker; off is best on earphones.\n\nStandby: switch it on here, then lock the phone. She listens on the phone itself for “Hey Haru” — nothing is sent anywhere until she hears it — then chimes and takes a call, and hangs up after 45 seconds of quiet. It uses battery while it is on and shows the microphone light. A phone call or Siri pauses it; open Haru to start it again. On the charger the screen stays awake.\n\nYour voice: tap Teach, say “Hey Haru” six times as you normally would (near, far, quiet), and from then on her name in another voice does not wake her — the check happens on the phone, against those takes. The takes also go to her server, to train a wake word that is yours.\n\nWith standby off: the Call Haru shortcut, given a Vocal Shortcut (“Hey Haru”) under Settings › Accessibility, opens her in a call — after Face ID if the phone is locked.")
+            Text("Tap the mic and ask: she listens for one question, writes it down and answers as she does a message, in her voice, and the mic closes itself. Hold the mic for a call: she listens, decides when you've finished, lets you talk over her, and answers a sentence at a time. Typed messages get her usual voice either way. Echo cancelling on: she can't hear herself through the speaker; off is best on earphones.\n\nStandby: switch it on here, then lock the phone. She listens on the phone itself for “Hey Haru” — nothing is sent anywhere until she hears it — then chimes and takes a call, and hangs up after 45 seconds of quiet. It uses battery while it is on and shows the microphone light. A phone call or Siri pauses it; open Haru to start it again. On the charger the screen stays awake.\n\nStandby wake voice: tap Teach standby voice, say “Hey Haru” six times as you normally would (near, far, quiet), and from then on her name in another voice does not wake her — the check happens on the phone, against those takes. The takes also go to her server, to train a wake word that is yours.\n\nWith standby off: the Call Haru shortcut, given a Vocal Shortcut (“Hey Haru”) under Settings › Accessibility, opens her in a call — after Face ID if the phone is locked.")
         }
     }
 

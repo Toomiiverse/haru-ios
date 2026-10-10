@@ -161,12 +161,12 @@ final class ChatStore {
             self.drain()
         }
         audio.onVoiceStart = { [weak self] in
-            self?.lastCallActivity = Date()
             guard let self, let talk = self.talk else { return }
             // Asked for one thing and they have started saying it: the window
             // opens again from here, so it cannot close on them mid-sentence.
             if self.askingOnce, talk.state == .awake { self.act(talk.start(self.now, awake: true)) }
-            self.act(talk.voiceStarted(self.now))
+            // Identity is checked by Core before /api/listen returns a transcript.
+            // Raw room speech must not interrupt playback.
             if talk.state != .asleep { self.stage.attend("typing", ms: 1_500) }
         }
         audio.onVoiceEnd = { [weak self] wav in
@@ -1262,13 +1262,19 @@ final class ChatStore {
     /// A stretch of their voice, through her ears on the server, then to the
     /// conversation.
     private func hear(_ wav: Data) async {
-        guard talk != nil else { return }
+        guard let activeTalk = talk, !transcribing else { return }
         transcribing = true
         defer { transcribing = false }
         do {
-            let heard: Heard = try await client.upload("/api/listen", data: wav, type: "audio/wav")
-            guard let text = heard.text?.trimmingCharacters(in: .whitespacesAndNewlines), !text.isEmpty,
-                  let talk else { return }
+            let heard: VoiceDictationReply = try await client.upload("/api/listen", data: wav, type: "audio/wav")
+            guard !Task.isCancelled, let talk, talk === activeTalk else { return }
+            if let line = heard.notice, !line.isEmpty {
+                notice = line
+                say(line, emotion: nil) // Separate audio; never a user or assistant history entry.
+            }
+            guard let text = heard.text?.trimmingCharacters(in: .whitespacesAndNewlines), !text.isEmpty else { return }
+            lastCallActivity = Date()
+            act(talk.voiceStarted(now))
             act(talk.heard(text, now))
         } catch HaruError.signedOut {
             session.signedIn = false

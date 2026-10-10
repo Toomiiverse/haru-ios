@@ -18,6 +18,7 @@ fi
 node --test scripts/verify-testflight.test.mjs scripts/stage.test.mjs
 bash scripts/test-voice-transport.sh
 bash scripts/test-affect-settings.sh
+bash scripts/test-speaker-profile.sh
 bash scripts/test-chat-delivery.sh
 bash scripts/test-transcript-refresh.sh
 bash scripts/test-stage-recovery.sh

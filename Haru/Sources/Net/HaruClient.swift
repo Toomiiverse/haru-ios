@@ -86,7 +86,7 @@ struct HaruClient: Sendable {
 
     func get<T: Decodable>(_ path: String) async throws -> T {
         var req = request(path, method: "GET")
-        if path == "/api/chat" { req.cachePolicy = .reloadIgnoringLocalCacheData }
+        if path == "/api/chat" || path == "/api/speaker/status" { req.cachePolicy = .reloadIgnoringLocalCacheData }
         let (data, response) = try await session.data(for: req)
         try Self.check(response, data)
         return try JSONDecoder().decode(T.self, from: data)
