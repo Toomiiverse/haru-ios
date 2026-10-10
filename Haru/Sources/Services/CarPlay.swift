@@ -2,11 +2,15 @@ import AVFoundation
 import CarPlay
 import MapKit
 import Observation
+import OSLog
 
 /// Both scenes use HaruRuntime's conversation; connecting a car never creates a second microphone engine.
 @available(iOS 26.4, *)
 @MainActor final class HaruCarPlayScene: NSObject, CPTemplateApplicationSceneDelegate {
     private weak var scene: CPTemplateApplicationScene?
+    private var controller: CPInterfaceController?
+    private let logger = Logger(subsystem: "Haru", category: "CarPlay")
+    private var failureState: String?
     private var voice: CPVoiceControlTemplate?
     private var states: [CPVoiceControlState] = []
     private var drive = DriveState()
@@ -20,7 +24,8 @@ import Observation
     func templateApplicationScene(_ templateApplicationScene: CPTemplateApplicationScene,
                                   didConnect interfaceController: CPInterfaceController) {
         scene = templateApplicationScene
-        drive.connect()
+        controller = interfaceController
+        drive.connect(isActive: templateApplicationScene.activationState == .foregroundActive)
         runtime.chat.inCarPlay = true
         runtime.chat.onCarPlayInterruption = { [weak self] in self?.stop() }
         Audio.carPlay = true
@@ -30,13 +35,42 @@ import Observation
                       ("listening", "Listening", "mic.fill"),
                       ("thinking", "Thinking", "ellipsis"),
                       ("speaking", "Speaking", "waveform"),
-                      ("unavailable", "Haru is unavailable", "exclamationmark.circle")]
-        states = labels.map { CPVoiceControlState(identifier: $0.0, titleVariants: [$0.1],
-                                                 image: UIImage(systemName: $0.2), repeats: false) }
+                      ("unavailable", "Haru is unavailable. Tap Talk to retry", "exclamationmark.circle"),
+                      ("network", "Check your connection when parked", "wifi.exclamationmark"),
+                      ("account", "Sign in to Haru on your phone when parked", "person.crop.circle.badge.exclamationmark"),
+                      ("microphone", "Allow microphone access on your phone when parked", "mic.slash"),
+                      ("busy", "Finish the current reply, then tap Talk", "ellipsis"),
+                      ("timeout", "Connection timed out. Tap Talk to retry", "clock.badge.exclamationmark")]
+        let idleStates: Set<String> = ["ready", "unavailable", "network", "account", "microphone", "busy", "timeout"]
+        // Configure actions before presenting the template. Each displayed state keeps
+        // its original buttons and handlers for the lifetime of this connection.
+        states = labels.flatMap { identifier, title, symbol in
+            [false, true].map { hasRoute in
+                let state = CPVoiceControlState(identifier: identifier + (hasRoute ? "_route" : ""),
+                                                titleVariants: [title], image: UIImage(systemName: symbol), repeats: false)
+                let idle = idleStates.contains(identifier)
+                let conversation = CPButton(image: UIImage(systemName: idle ? "mic.fill" : "stop.fill")!) { [weak self, weak templateApplicationScene] _ in
+                    guard let self, let templateApplicationScene, self.scene === templateApplicationScene else { return }
+                    if idle { self.start(fromTap: true) } else { self.stop() }
+                }
+                conversation.title = idle ? "Talk" : "End conversation"
+                var buttons = [conversation]
+                if hasRoute {
+                    let navigate = CPButton(image: UIImage(systemName: "arrow.triangle.turn.up.right.diamond.fill")!) { [weak self, weak templateApplicationScene] _ in
+                        guard let self, let templateApplicationScene, self.scene === templateApplicationScene else { return }
+                        self.navigate()
+                    }
+                    navigate.title = "Navigate"
+                    buttons.insert(navigate, at: 0)
+                }
+                state.actionButtons = buttons
+                return state
+            }
+        }
         let template = CPVoiceControlTemplate(voiceControlStates: states)
         voice = template
-        interfaceController.setRootTemplate(template, animated: false) { [weak self] success, error in
-            guard let self else { return }
+        interfaceController.setRootTemplate(template, animated: false) { [weak self, weak templateApplicationScene] success, error in
+            guard let self, let templateApplicationScene, self.scene === templateApplicationScene else { return }
             self.ready = success
             if !success { self.runtime.chat.notice = error?.localizedDescription ?? "CarPlay could not open Haru." }
             if success, self.drive.automaticStartAvailable { self.start() }
@@ -47,13 +81,17 @@ import Observation
 
     func sceneDidBecomeActive(_ scene: UIScene) {
         drive.activate()
+        activatePhoneTools()
+        if ready, drive.automaticStartAvailable { start() }
+        else { update() }
+    }
+
+    private func activatePhoneTools() {
         PhoneTools.shared.activity(carPlayActive: true)
         PhoneTools.shared.carPlayDirections = { [weak self] destination, mode, expires in
             guard let self else { throw PhoneTools.Failure("ios_carplay_disconnected") }
             return try await self.prepareTrip(destination: destination, mode: mode, expires: expires)
         }
-        if ready, drive.automaticStartAvailable { start() }
-        else { update() }
     }
 
     func sceneWillResignActive(_ scene: UIScene) {
@@ -75,13 +113,24 @@ import Observation
         Audio.carPlay = false
         scene = nil
         voice = nil
+        states = []
+        controller = nil
+        failureState = nil
         if UIApplication.shared.applicationState == .active {
             Task { await runtime.chat.standbyOnActive() }
         }
     }
 
-    private func start() {
-        guard ready, drive.begin() else { return }
+    private func start(fromTap: Bool = false) {
+        if fromTap {
+            guard drive.beginFromTap() else { return }
+            ready = true
+        } else {
+            guard ready, drive.begin() else { return }
+        }
+        activatePhoneTools()
+        logger.info("Starting CarPlay conversation; explicit tap: \(fromTap)")
+        failureState = nil
         let epoch = UUID()
         startupID = epoch
         opening = true
@@ -93,7 +142,7 @@ import Observation
                 do { try await Task.sleep(for: .seconds(90)) } catch { return }
                 guard let self, self.startupID == epoch, self.opening else { return }
                 self.stop()
-                self.runtime.chat.notice = "Haru took too long to connect. Tap Talk to retry."
+                self.fail("timeout", notice: "Haru took too long to connect. Tap Talk to retry.")
             }
             defer {
                 deadline.cancel()
@@ -103,22 +152,23 @@ import Observation
             await chat.setStandby(false, persist: false)
             guard !Task.isCancelled else { return }
             guard !chat.busy else {
-                chat.notice = "Finish the current reply, then tap Talk."
-                self.drive.stop()
+                self.fail("busy", notice: "Finish the current reply, then tap Talk.")
                 return
             }
             chat.stopDrivingAudio()
-            await self.runtime.session.check()
+            await self.runtime.session.check(quick: true)
             guard !Task.isCancelled, self.drive.visible, self.startupID == epoch else { return }
+            guard self.runtime.session.problem == nil else {
+                self.fail("network", notice: "Haru could not connect. Check your connection when parked, then tap Talk.")
+                return
+            }
             guard self.runtime.session.signedIn == true else {
-                chat.notice = "Haru is unavailable. Check your connection and account when parked."
-                self.drive.stop()
+                self.fail("account", notice: "Sign in to Haru on your phone when parked, then tap Talk.")
                 return
             }
             // The permission is set up on the phone before driving, never requested on the car display.
             guard AVAudioApplication.shared.recordPermission == .granted else {
-                chat.notice = "Microphone access must be set up before driving."
-                self.drive.stop()
+                self.fail("microphone", notice: "Allow microphone access for Haru on your phone when parked.")
                 return
             }
             if !self.drive.briefed {
@@ -128,8 +178,21 @@ import Observation
             }
             guard !Task.isCancelled, self.drive.visible, self.startupID == epoch else { return }
             await chat.holdMic()
-            if chat.call == nil { self.drive.stop(); chat.audio.releaseSession() }
+            guard !Task.isCancelled, self.drive.visible, self.startupID == epoch else { return }
+            if chat.call == nil {
+                self.fail("unavailable", notice: chat.notice ?? "Haru could not start listening. Tap Talk to retry.")
+                chat.audio.releaseSession()
+            }
         }
+    }
+
+    private func fail(_ state: String, notice: String) {
+        logger.error("CarPlay startup failed: \(state, privacy: .public)")
+        failureState = state
+        drive.stop()
+        opening = false
+        runtime.chat.notice = notice
+        update()
     }
 
     private func stop() {
@@ -153,7 +216,7 @@ import Observation
             Task { @MainActor in
                 guard let self, self.scene != nil else { return }
                 if self.drive.running, !self.opening, self.runtime.chat.call == nil { self.stop() }
-                if self.runtime.session.signedIn == false, self.drive.running { self.stop() }
+                if !self.opening, self.runtime.session.signedIn == false, self.drive.running { self.stop() }
                 self.update()
                 self.observe()
             }
@@ -164,33 +227,20 @@ import Observation
         guard let voice else { return }
         let chat = runtime.chat
         let identifier: String
-        if chat.notice != nil, !drive.running { identifier = "unavailable" }
+        if chat.notice != nil, !drive.running { identifier = failureState ?? "unavailable" }
         else if opening { identifier = chat.busy || chat.audio.speaking ? "briefing" : "connecting" }
         else if !drive.running { identifier = "ready" }
         else {
             switch chat.callState {
-            case .off: identifier = "ready"
+            case .off: identifier = "connecting"
             case .connecting: identifier = "connecting"
             case .listening: identifier = "listening"
             case .thinking: identifier = "thinking"
             case .speaking: identifier = "speaking"
             }
         }
-        let conversation = CPButton(image: UIImage(systemName: drive.running ? "stop.fill" : "mic.fill")!) { [weak self] _ in
-            guard let self else { return }
-            if self.drive.running { self.stop() } else { self.start() }
-        }
-        conversation.title = drive.running ? "End conversation" : "Talk"
-        var buttons = [conversation]
-        if let route, route.expires > Date() {
-            let navigate = CPButton(image: UIImage(systemName: "arrow.triangle.turn.up.right.diamond.fill")!) { [weak self] _ in
-                self?.navigate()
-            }
-            navigate.title = "Navigate"
-            buttons.insert(navigate, at: 0)
-        }
-        for state in states { state.actionButtons = buttons }
-        voice.activateVoiceControlState(withIdentifier: identifier)
+        let hasRoute = route.map { $0.expires > Date() } ?? false
+        voice.activateVoiceControlState(withIdentifier: identifier + (hasRoute ? "_route" : ""))
     }
 
     private func prepareTrip(destination: String, mode: String, expires: Double) async throws -> [String: Any] {

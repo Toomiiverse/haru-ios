@@ -46,14 +46,16 @@ final class Session {
     }
 
     /// Asks for the day, which is the cheapest thing behind the login.
-    func check() async {
+    func check(quick: Bool = false) async {
         do {
-            let _: ChatPage = try await client.get("/api/chat")
+            let checking = quick ? HaruClient(base: client.base, quick: true) : client
+            let _: ChatPage = try await checking.get("/api/chat")
             signedIn = true
             problem = nil
             Shared.publish(base: client.base)
         } catch HaruError.signedOut {
             signedIn = false
+            problem = nil
         } catch {
             // Unreachable is not the same as signed out: keep whatever we knew.
             if signedIn == nil { signedIn = false }
