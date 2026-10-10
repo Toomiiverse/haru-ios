@@ -21,6 +21,8 @@ struct Entry: Identifiable, Hashable {
     var pictures: [Picture] = []
     /// His message answers this line of hers: shown above his words.
     var quote: String? = nil
+    /// What he sent, kept when her reply failed so one tap sends it again.
+    var resend: String? = nil
 
     var parts: [String] {
         guard kind == .her, !aside else { return [text] }
@@ -277,7 +279,8 @@ final class ChatStore {
 
     /// Sent while she is still answering — the composer has already let go
     /// of the text — it waits for her to finish rather than drop it. False
-    /// when she took too long, so the composer can put the text back.
+    /// when she took too long, or when her reply failed on the way, so the
+    /// composer can put the text back.
     @discardableResult
     func send(_ raw: String, spokeOver: Bool = false) async -> Bool {
         let text = raw.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -324,8 +327,7 @@ final class ChatStore {
             body["quoted"] = .string(Self.excerpt(of: answering.text))
         }
         stage.attend("thinking", ms: 20_000)
-        await run(client.stream("/api/chat/stream", body), into: waitID)
-        return true
+        return await run(client.stream("/api/chat/stream", body), into: waitID, resend: text)
     }
 
     /// Enough of her line to know it by: the first 140 characters, cut at a word.
@@ -357,7 +359,11 @@ final class ChatStore {
         entries.last(where: { $0.kind == .her && !$0.aside && $0.serverID != nil })
     }
 
-    private func run(_ stream: AsyncThrowingStream<StreamEvent, Error>, into id: String) async {
+    /// True once her side of the turn is settled — a reply, or a deliberate
+    /// silence. False when the round was lost: cancelled, signed out, or failed
+    /// on the server, in which case `resend` rides the system line that says so.
+    @discardableResult
+    private func run(_ stream: AsyncThrowingStream<StreamEvent, Error>, into id: String, resend: String? = nil) async -> Bool {
         var said = ""
         var reply: String?
         var ignored = false
@@ -396,25 +402,25 @@ final class ChatStore {
             }
         } catch is CancellationError {
             hush()
-            return
+            return false
         } catch HaruError.signedOut {
             session.signedIn = false
-            return
+            return false
         } catch {
             failure = error.localizedDescription
         }
 
-        guard !Task.isCancelled, let i = entries.firstIndex(where: { $0.id == id }) else { return }
+        guard !Task.isCancelled, let i = entries.firstIndex(where: { $0.id == id }) else { return false }
         if let failure {
-            entries[i] = Entry(id: id, kind: .system, text: failure)
+            entries[i] = Entry(id: id, kind: .system, text: failure, resend: resend)
             if let talk { act(talk.replied(now, willSpeak: false)) }
-            return
+            return false
         }
         let final = (reply ?? said).trimmingCharacters(in: .whitespacesAndNewlines)
         if final.isEmpty {
             entries[i] = Entry(id: id, kind: .system, text: ignored ? "Seen. She is not answering that." : "She had nothing to say.")
             if let talk { act(talk.replied(now, willSpeak: false)) }
-            return
+            return true
         }
         entries[i].text = final
         entries[i].waiting = false
@@ -431,6 +437,14 @@ final class ChatStore {
         // The reply's id — what a thumb or a retry needs — only exists on the
         // server. A quiet reload picks it up, and anything she added since.
         await load(completedReply: final)
+        return true
+    }
+
+    /// The words a failed line carried, sent again; the line itself goes.
+    func resend(_ entry: Entry) async {
+        guard let text = entry.resend else { return }
+        entries.removeAll { $0.id == entry.id }
+        await send(text)
     }
 
     private func paint(_ id: String, _ text: String, waiting: Bool) {

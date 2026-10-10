@@ -541,7 +541,8 @@ struct ChatView: View {
         draft = ""
         lastSent = (text, Date())
         let sent = await chat.send(text)
-        if !sent { lastSent = nil; draft = text }
+        // Not delivered: the words come back to the box, unless something new is already there.
+        if !sent { lastSent = nil; if draft.isEmpty { draft = text } }
     }
 
     /// Straight off the camera: the same JPEG, sized the same way, as a picture
@@ -634,11 +635,21 @@ struct EntryView: View {
         switch entry.kind {
         case .me: mine
         case .system:
-            Text(entry.text)
-                .font(.footnote)
-                .foregroundStyle(.secondary)
-                .multilineTextAlignment(.center)
-                .frame(maxWidth: .infinity)
+            VStack(spacing: 6) {
+                Text(entry.text)
+                    .font(.footnote)
+                    .foregroundStyle(.secondary)
+                    .multilineTextAlignment(.center)
+                if entry.resend != nil {
+                    // Her reply failed on the server: the same words again, one tap.
+                    Button("Send again") { Task { await chat.resend(entry) } }
+                        .font(.footnote)
+                        .buttonStyle(.bordered)
+                        .controlSize(.small)
+                        .disabled(chat.busy)
+                }
+            }
+            .frame(maxWidth: .infinity)
         case .her: hers
         }
     }

@@ -40,11 +40,14 @@ final class Audio {
     private var playToken = 0
     private var playEndsAt: TimeInterval = 0
     private var mouthTapOn = false
+    /// The file behind a whole-line play, removed once the line is over.
+    private var playFile: URL?
     private var configurationWatcher: NSObjectProtocol?
     private var interruptionWatcher: NSObjectProtocol?
 
     init() {
         engine.attach(player)
+        Self.sweepLeftovers()
         configurationWatcher = NotificationCenter.default.addObserver(
             forName: .AVAudioEngineConfigurationChange, object: engine, queue: .main
         ) { [weak self] _ in
@@ -101,6 +104,7 @@ final class Audio {
         let url = FileManager.default.temporaryDirectory.appendingPathComponent("her-\(token).wav")
         do {
             try wav.write(to: url)
+            playFile = url
             let file = try AVAudioFile(forReading: url)
             engine.disconnectNodeOutput(player)
             engine.connect(player, to: engine.mainMixerNode, format: file.processingFormat)
@@ -262,6 +266,7 @@ final class Audio {
         speaking = false
         ear.herTurn(false)
         removeMouthTap()
+        discardPlayFile()
         onLevel?(0)
         onFinished?()
     }
@@ -275,7 +280,27 @@ final class Audio {
         speaking = false
         ear.herTurn(false)
         removeMouthTap()
+        discardPlayFile()
         onLevel?(0)
+    }
+
+    private func discardPlayFile() {
+        guard let playFile else { return }
+        try? FileManager.default.removeItem(at: playFile)
+        self.playFile = nil
+    }
+
+    /// Lines a previous run left in the temp folder: anything of hers older
+    /// than a few minutes, since a line still playing is never that old.
+    private static func sweepLeftovers() {
+        let files = FileManager.default
+        let dir = files.temporaryDirectory
+        guard let names = try? files.contentsOfDirectory(atPath: dir.path) else { return }
+        for name in names where name.hasPrefix("her-") && name.hasSuffix(".wav") {
+            let url = dir.appendingPathComponent(name)
+            let modified = (try? files.attributesOfItem(atPath: url.path)[.modificationDate] as? Date) ?? .distantPast
+            if Date().timeIntervalSince(modified) > 300 { try? files.removeItem(at: url) }
+        }
     }
 
     private func installMouthTap() {

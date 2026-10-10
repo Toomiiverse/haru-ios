@@ -87,9 +87,10 @@ struct LoginView: View {
         guard !server.isEmpty else { return }
         try? await Task.sleep(for: .milliseconds(400))
         guard !Task.isCancelled else { return }
-        // Her face is served before the login, so the address can be checked by eye.
-        session.useBase(server)
-        if let data = try? await session.client.bytes("/portrait") {
+        // Her face is served before the login, so the address can be checked by
+        // eye. A client of its own: the address is only kept once Sign in is tapped.
+        let client = Session.client(for: server, quick: true)
+        if let data = try? await client.bytes("/portrait") {
             portrait = UIImage(data: data)
         }
     }

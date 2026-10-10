@@ -45,7 +45,9 @@ final class Stage: NSObject, WKNavigationDelegate {
         // SwiftUI owns the stage tap and long-press gestures. The stage page is
         // display-only; letting WKWebView hit-test swallows those gestures.
         web.isUserInteractionEnabled = false
+        #if DEBUG
         web.isInspectable = true
+        #endif
         web.navigationDelegate = self
         self.web = web
         load()

@@ -39,6 +39,12 @@ final class Session {
         HaruClient(base: normalized(UserDefaults.standard.string(forKey: baseKey) ?? defaultBase), quick: quick)
     }
 
+    /// A client for an address that has not been kept — the sign-in screen
+    /// checking a face before anything is saved.
+    nonisolated static func client(for raw: String, quick: Bool = false) -> HaruClient {
+        HaruClient(base: normalized(raw), quick: quick)
+    }
+
     func useBase(_ raw: String) {
         baseURLString = raw
         UserDefaults.standard.set(raw, forKey: Self.baseKey)
