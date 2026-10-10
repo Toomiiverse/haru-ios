@@ -37,6 +37,27 @@ What it does:
   for a background refresh now and then, the app asks her, and anything she has
   to say lands as a notification.
 
+## Conversation voice recognition
+
+Open **More → Talking → My voice · conversation filtering**. End any call,
+stop standby and wait for playback to finish. Record 20 seconds of natural
+speech, check it with a separate 8-second recording, then enable **Only my
+voice**. This profile is shared with the web app. Start a new call after changing
+it. The existing **Standby wake voice** controls only who can wake the app and
+use a separate on-phone profile.
+
+Both recorded questions and calls use Core's conversation admission. Native
+dictation waits for an accepted transcript before interrupting playback; this
+also delays interruption when filtering is off. Rejected recordings can produce
+a short spoken notice without adding a conversation message. Setup can disable
+filtering or forget the shared conversation profile. Failed requests need a
+status refresh rather than automatic replay.
+
+Short, noisy or overlapping speech can be uncertain. This is speaker verification,
+not separation of simultaneous voices. Hume's provider path is not qualified by
+the native tests. Physical microphone, Bluetooth/CarPlay audio and end-to-end
+call timing still need device testing.
+
 ## Building
 
 There is no Xcode project checked in. `project.yml` is the project; XcodeGen
