@@ -333,10 +333,17 @@ struct ChatView: View {
             .refreshable { await refreshChat() }
             .defaultScrollAnchor(.bottom)
             .scrollDismissesKeyboard(.interactively)
-            .onChange(of: chat.entries.count) { _, _ in proxy.scrollTo("end", anchor: .bottom) }
-            .onChange(of: chat.entries.last?.text) { _, _ in proxy.scrollTo("end", anchor: .bottom) }
+            .onChange(of: chat.entries.count) { _, _ in scrollToEnd(proxy) }
+            .onChange(of: chat.entries.last?.text) { _, _ in scrollToEnd(proxy) }
             .onTapGesture { typing = false }
         }
+    }
+
+    /// Scrolling in the same update that adds rows lands past content the lazy
+    /// stack has not measured yet; with the keyboard up the transcript then sits
+    /// blank until the keyboard closes and forces a relayout.
+    private func scrollToEnd(_ proxy: ScrollViewProxy) {
+        DispatchQueue.main.async { proxy.scrollTo("end", anchor: .bottom) }
     }
 
     private func refreshChat() async {
