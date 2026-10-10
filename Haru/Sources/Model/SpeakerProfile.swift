@@ -41,3 +41,18 @@ struct SpeakerRecording {
         return out
     }
 }
+
+/// Owns one device-side upload at a time. Old completions cannot end a new take.
+struct DictationCaptureGate {
+    private var current: UUID?
+    mutating func begin() -> UUID? {
+        guard current == nil else { return nil }
+        let ticket = UUID(); current = ticket; return ticket
+    }
+    func accepts(_ ticket: UUID) -> Bool { current == ticket }
+    mutating func finish(_ ticket: UUID) -> Bool {
+        guard accepts(ticket) else { return false }
+        current = nil; return true
+    }
+    mutating func invalidate() { current = nil }
+}

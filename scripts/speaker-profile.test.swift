@@ -54,6 +54,14 @@ actor FakeSpeakerAPI: SpeakerProfileAPI {
         try await Task.sleep(for: .milliseconds(20)); setup.invalidate()
         try await staleWrite.value
         precondition(setup.profile == nil && setup.needsRefresh, "Late write confirmed after leaving setup")
+        var gate = DictationCaptureGate()
+        let first = gate.begin()!
+        precondition(gate.begin() == nil, "Overlapping capture admitted")
+        gate.invalidate()
+        let second = gate.begin()!
+        precondition(!gate.accepts(first) && gate.accepts(second))
+        precondition(!gate.finish(first) && gate.accepts(second), "Old upload ended new capture")
+        precondition(gate.finish(second) && gate.begin() != nil)
         var recording = SpeakerRecording(seconds: 8)
         recording.append(Data(repeating: 17, count: 300_001))
         precondition(recording.complete && recording.pcm.count == 256_000)

@@ -76,6 +76,7 @@ final class ChatStore {
     /// She was stopped mid-line by a tap; rides the next message as `interrupted`.
     private var cutOff = false
     var transcribing = false
+    private var dictationCapture = DictationCaptureGate()
     /// Something worth an alert. Cleared by the view.
     var notice: String?
     /// The conversation by voice: off, or where it stands.
@@ -1250,6 +1251,8 @@ final class ChatStore {
     }
 
     func stopTalking() {
+        dictationCapture.invalidate()
+        transcribing = false
         guard let talk else { return }
         askingOnce = false
         act(talk.stop())
@@ -1262,12 +1265,12 @@ final class ChatStore {
     /// A stretch of their voice, through her ears on the server, then to the
     /// conversation.
     private func hear(_ wav: Data) async {
-        guard let activeTalk = talk, !transcribing else { return }
+        guard let activeTalk = talk, let capture = dictationCapture.begin() else { return }
         transcribing = true
-        defer { transcribing = false }
+        defer { if dictationCapture.finish(capture) { transcribing = false } }
         do {
             let heard: VoiceDictationReply = try await client.upload("/api/listen", data: wav, type: "audio/wav")
-            guard !Task.isCancelled, let talk, talk === activeTalk else { return }
+            guard !Task.isCancelled, dictationCapture.accepts(capture), let talk, talk === activeTalk else { return }
             if let line = heard.notice, !line.isEmpty {
                 notice = line
                 say(line, emotion: nil) // Separate audio; never a user or assistant history entry.
