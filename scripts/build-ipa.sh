@@ -6,6 +6,7 @@ set -euo pipefail
 cd "$(dirname "$0")/.."
 
 if git log -1 --format=%B | grep -qx 'Haru-Build-Only: true'; then HARU_BUILD_ONLY=1; fi
+if git log -1 --format=%B | grep -qx 'Haru-Signing-Inventory: true'; then node scripts/inspect-signing.mjs; exit 0; fi
 
 # Pin the stable release; newer beta SDKs may be rejected by App Store Connect.
 export DEVELOPER_DIR=/Applications/Xcode_27.0.app/Contents/Developer
