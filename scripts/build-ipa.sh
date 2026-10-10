@@ -96,6 +96,7 @@ if [ "${HARU_BUILD_ONLY:-0}" != 1 ] && [ -n "${ASC_KEY_ID:-}" ] && [ -n "${ASC_I
   if git log -1 --format=%B | grep -qx 'Haru-Revoke-Development-Certificate: H46SZTDWR5'; then
     node scripts/revoke-approved-development-certificate.mjs
   fi
+  node scripts/prune-dev-certs.mjs
   build_number="${GITHUB_RUN_NUMBER:-1}"
   auth=(-allowProvisioningUpdates -authenticationKeyPath "$key" -authenticationKeyID "$ASC_KEY_ID" -authenticationKeyIssuerID "$ASC_ISSUER_ID")
   xcodebuild \
