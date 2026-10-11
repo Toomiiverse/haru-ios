@@ -24,6 +24,7 @@ bash scripts/test-transcript-refresh.sh
 bash scripts/test-stage-recovery.sh
 bash scripts/test-retired-model-cleanup.sh
 bash scripts/test-drive.sh
+bash scripts/test-car-screen.sh
 
 command -v xcodegen >/dev/null || brew install xcodegen
 
