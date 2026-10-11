@@ -19,6 +19,10 @@ import OSLog
     private var ready = false
     private var startupID = UUID()
     private var route: (url: URL, expires: Date)?
+    /// A call that never answers: the screen would say Connecting for ever, since the
+    /// startup deadline ends once the call is placed. Twenty seconds, then a retry state.
+    private var connectWatch: Task<Void, Never>?
+    private static let connectSeconds: Double = 20
     private var runtime: HaruRuntime { .shared }
 
     func templateApplicationScene(_ templateApplicationScene: CPTemplateApplicationScene,
@@ -106,6 +110,8 @@ import OSLog
         drive.disconnect()
         route = nil
         ready = false
+        connectWatch?.cancel(); connectWatch = nil
+        PhoneTools.shared.carPlay(state: "disconnected")
         PhoneTools.shared.carPlayDirections = nil
         PhoneTools.shared.activity(carPlayActive: false)
         runtime.chat.inCarPlay = false
@@ -241,6 +247,21 @@ import OSLog
         }
         let hasRoute = route.map { $0.expires > Date() } ?? false
         voice.activateVoiceControlState(withIdentifier: identifier + (hasRoute ? "_route" : ""))
+        PhoneTools.shared.carPlay(state: identifier)
+        watchConnecting(identifier == "connecting" && !opening && drive.running)
+    }
+
+    private func watchConnecting(_ on: Bool) {
+        guard on else { connectWatch?.cancel(); connectWatch = nil; return }
+        guard connectWatch == nil else { return }
+        let epoch = startupID
+        connectWatch = Task { [weak self] in
+            do { try await Task.sleep(for: .seconds(Self.connectSeconds)) } catch { return }
+            guard let self, self.startupID == epoch, !self.opening, self.drive.running, self.runtime.chat.callState == .connecting else { return }
+            self.logger.error("CarPlay call never became ready")
+            self.stop()
+            self.fail("timeout", notice: "Haru's call line did not answer. Tap Talk to retry.")
+        }
     }
 
     private func prepareTrip(destination: String, mode: String, expires: Double) async throws -> [String: Any] {

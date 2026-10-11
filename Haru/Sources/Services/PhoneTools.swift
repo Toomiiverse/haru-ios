@@ -7,6 +7,7 @@ import CoreLocation
 import MapKit
 import HealthKit
 import WeatherKit
+import AVFoundation
 
 /// Device adapter. Core selects operations; this class only checks the platform
 /// permissions, retained command, expiration and current object before execution.
@@ -20,6 +21,22 @@ import WeatherKit
     var domains = Set<String>()
     var foreground = false
     var carPlayActive = false
+    /// What the car screen is showing (CarPlay.swift's state identifier), told to the server as it
+    /// changes with the audio route, so the service journal shows what the driver saw.
+    private(set) var carPlayState = ""
+    func carPlay(state: String) {
+        guard state != carPlayState else { return }
+        carPlayState = state
+        Task { try? await send(heartbeat()) }
+    }
+    private func heartbeat() -> [String: Any] {
+        var frame: [String: Any] = ["type": "heartbeat", "foreground": presented, "callActive": callActive]
+        if carPlayActive || !carPlayState.isEmpty {
+            frame["carPlay"] = carPlayState
+            frame["route"] = AVAudioSession.sharedInstance().currentRoute.outputs.map { $0.portType.rawValue }.joined(separator: ",")
+        }
+        return frame
+    }
     var carPlayDirections: ((String, String, Double) async throws -> [String: Any])?
     private var presented: Bool { foreground || carPlayActive }
     var callActive = false
@@ -79,7 +96,7 @@ import WeatherKit
                     if let cookies=HTTPCookieStorage.shared.cookies(for:client.base){for(k,v) in HTTPCookie.requestHeaderFields(with:cookies){request.setValue(v,forHTTPHeaderField:k)}}
                     let ws=client.session.webSocketTask(with:request);self.socket=ws;ws.resume();await self.hello()
                     self.beat=Task { [weak self] in
-                        while !Task.isCancelled {try? await Task.sleep(for:.seconds(10));guard let self else{return};try? await self.send(["type":"heartbeat","foreground":self.presented,"callActive":self.callActive])}
+                        while !Task.isCancelled {try? await Task.sleep(for:.seconds(10));guard let self else{return};try? await self.send(self.heartbeat())}
                     }
                     while !Task.isCancelled,self.generation==epoch {
                         let message=try await ws.receive();guard case .string(let raw)=message,raw.utf8.count<=262144,let data=raw.data(using:.utf8),let frame=try JSONSerialization.jsonObject(with:data) as? [String:Any] else{throw Failure("ios_invalid_frame")}

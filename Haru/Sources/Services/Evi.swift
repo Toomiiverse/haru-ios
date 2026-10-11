@@ -38,6 +38,9 @@ final class EviCall: @unchecked Sendable {
     private let onEvent: @Sendable (Event) -> Void
     private let lock = NSLock()
     private var closed = false
+    private var ready = false
+    /// How long the server has to say `ready` or `refused` before the call is given up on.
+    static let answerSeconds: Double = 20
     private var inputSamples = 0
     private var captureFrames: [(start:Int, end:Int, at:Double)] = []
     private var turnCapture: [Int:Double] = [:]
@@ -63,6 +66,16 @@ final class EviCall: @unchecked Sendable {
         // What this phone can play: her voice as it is made.
         task.send(.string("{\"type\":\"hello\",\"pcm\":true}")) { _ in }
         receive()
+        // The socket's own timeouts are the patient ones (minutes). A handshake that hangs,
+        // or a server that never answers, must not leave the phone saying Connecting.
+        Task { [weak self] in
+            try? await Task.sleep(for: .seconds(Self.answerSeconds))
+            guard let self else { return }
+            self.lock.lock()
+            let answered = self.ready || self.closed
+            self.lock.unlock()
+            if !answered { self.task.cancel(with: .goingAway, reason: nil); self.finish("her call line did not answer") }
+        }
     }
 
     /// Whether she is audible through this phone's speaker right now, so the
@@ -135,8 +148,12 @@ final class EviCall: @unchecked Sendable {
         guard let data = text.data(using: .utf8),
               let event = try? JSONDecoder().decode(CallEvent.self, from: data) else { return }
         switch event.type {
-        case "ready": onEvent(.ready)
-        case "refused": onEvent(.refused(event.reason ?? "The call could not be placed."))
+        case "ready":
+            lock.lock(); ready = true; lock.unlock()
+            onEvent(.ready)
+        case "refused":
+            lock.lock(); ready = true; lock.unlock()   // answered, in its way: no timeout on top
+            onEvent(.refused(event.reason ?? "The call could not be placed."))
         case "user_message":
             if let turn = event.turn, let end = event.speechEndSample {
                 lock.lock()
