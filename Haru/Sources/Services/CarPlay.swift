@@ -53,16 +53,23 @@ import OSLog
                 let state = CPVoiceControlState(identifier: identifier + (hasRoute ? "_route" : ""),
                                                 titleVariants: [title], image: UIImage(systemName: symbol), repeats: false)
                 let idle = idleStates.contains(identifier)
+                // CarPlay delivers button presses on its XPC queue, not the main thread. Everything
+                // below touches the chat store and her stage web view, which are main-actor only;
+                // a tap handled in place crashed the app in WebKit (build 166, 2026-10-11).
                 let conversation = CPButton(image: UIImage(systemName: idle ? "mic.fill" : "stop.fill")!) { [weak self, weak templateApplicationScene] _ in
-                    guard let self, let templateApplicationScene, self.scene === templateApplicationScene else { return }
-                    if idle { self.start(fromTap: true) } else { self.stop() }
+                    Task { @MainActor in
+                        guard let self, let templateApplicationScene, self.scene === templateApplicationScene else { return }
+                        if idle { self.start(fromTap: true) } else { self.stop() }
+                    }
                 }
                 conversation.title = idle ? "Talk" : "End conversation"
                 var buttons = [conversation]
                 if hasRoute {
                     let navigate = CPButton(image: UIImage(systemName: "arrow.triangle.turn.up.right.diamond.fill")!) { [weak self, weak templateApplicationScene] _ in
-                        guard let self, let templateApplicationScene, self.scene === templateApplicationScene else { return }
-                        self.navigate()
+                        Task { @MainActor in
+                            guard let self, let templateApplicationScene, self.scene === templateApplicationScene else { return }
+                            self.navigate()
+                        }
                     }
                     navigate.title = "Navigate"
                     buttons.insert(navigate, at: 0)
@@ -74,10 +81,13 @@ import OSLog
         let template = CPVoiceControlTemplate(voiceControlStates: states)
         voice = template
         interfaceController.setRootTemplate(template, animated: false) { [weak self, weak templateApplicationScene] success, error in
-            guard let self, let templateApplicationScene, self.scene === templateApplicationScene else { return }
-            self.ready = success
-            if !success { self.runtime.chat.notice = error?.localizedDescription ?? "CarPlay could not open Haru." }
-            if success, self.drive.automaticStartAvailable { self.start() }
+            let message = error?.localizedDescription
+            Task { @MainActor in
+                guard let self, let templateApplicationScene, self.scene === templateApplicationScene else { return }
+                self.ready = success
+                if !success { self.runtime.chat.notice = message ?? "CarPlay could not open Haru." }
+                if success, self.drive.automaticStartAvailable { self.start() }
+            }
         }
         update()
         observe()
@@ -307,9 +317,11 @@ import OSLog
         }
         stop()
         scene.open(route.url, options: nil) { [weak self] accepted in
-            guard let self else { return }
-            if !accepted { self.runtime.chat.notice = "Maps could not open. Try again when parked." }
-            self.update()
+            Task { @MainActor in
+                guard let self else { return }
+                if !accepted { self.runtime.chat.notice = "Maps could not open. Try again when parked." }
+                self.update()
+            }
         }
     }
 }
