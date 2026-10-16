@@ -51,7 +51,7 @@ final class CodeStore {
         streamTask = Task { [weak self] in
             while !Task.isCancelled {
                 do { for try await frame in client.codeEvents() { self?.apply(frame) } } catch {}
-                try? await Task.sleep(for: .seconds(2))
+                try? await Task.sleep(for: .seconds(4))
             }
         }
     }
@@ -66,7 +66,6 @@ final class CodeStore {
             if let e = f.error { items.append(CodeItem(kind: "error", id: UUID().uuidString, text: e)) }
             if !running { Task { await self.refreshSpend() } }
         case "usage": tokens = f.tokens ?? tokens
-        case "error": items.append(CodeItem(kind: "error", id: f.id ?? UUID().uuidString, text: f.text ?? "The coder is not answering."))
         case let kind:
             guard let id = f.id else { return }
             if let at = items.firstIndex(where: { $0.kind == kind && $0.id == id }) { items[at].merge(f) }
