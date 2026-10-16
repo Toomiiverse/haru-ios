@@ -174,7 +174,13 @@ final class RoleplayStore {
         await change("mode", ["mode": .string(mode)], client)
     }
     func newScene(_ client: HaruClient) async { _ = await change("new-scene", [:], client) }
+    /// Core's new-scene applies to the open character, so switch to this one first.
+    func newChat(_ character: VeniceCharacter, _ client: HaruClient) async -> Bool {
+        guard await select(character, client) else { return false }
+        return await change("new-scene", [:], client)
+    }
     private func change(_ op: String, _ fields: [String: JSONValue], _ client: HaruClient) async -> Bool {
+        if state == nil { await load(client) } // the first load failed: retry rather than drop the tap
         guard !waiting, let current = state else { return false }
         changing = true
         defer { changing = false }

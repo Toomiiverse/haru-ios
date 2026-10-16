@@ -31,7 +31,7 @@ struct ConversationView: View {
             .pickerStyle(.segmented)
             .padding(.horizontal, 16)
             .padding(.vertical, 8)
-            .disabled((roleplay.state == nil && !coding) || roleplay.waiting || chat.busy || chat.call != nil || chat.micOn)
+            .disabled(roleplay.waiting || chat.busy || chat.call != nil || chat.micOn)
             .accessibilityHint("Switch between Haru, your custom characters, and coding with the coder")
             if coding {
                 CodeView(store: code)
@@ -152,7 +152,7 @@ struct CharacterChatView: View {
                 }
                 ToolbarItem(placement: .topBarTrailing) { Button("New scene") { newScene = true }.disabled(store.waiting) }
             }
-            .sheet(isPresented: $showSessions) { SavedCharacterSessionLibrary(store: store) }
+            .sheet(isPresented: $showSessions) { NavigationStack { SavedCharacterSessionLibrary(store: store) } }
             .alert("Save character session", isPresented: $saveSession) {
                 TextField("Session name", text: $sessionLabel)
                 Button("Save") { Task { _ = await store.saveSession(id: saveSessionId, label: sessionLabel, session.client) } }
@@ -186,6 +186,7 @@ struct CharacterPicker: View {
     @State private var search = ""
     @State private var editor: CharacterDraft?
     @State private var deleting: VeniceCharacter?
+    @State private var opened: VeniceCharacter?
     var body: some View {
         NavigationStack {
             List {
@@ -195,9 +196,7 @@ struct CharacterPicker: View {
                 }
                 ForEach(store.myCharacters.filter { search.isEmpty || $0.name.localizedCaseInsensitiveContains(search) || $0.description.localizedCaseInsensitiveContains(search) }) { character in
                     HStack {
-                        Button {
-                            Task { if await store.select(character, session.client) { dismiss() } }
-                        } label: {
+                        Button { opened = character } label: {
                             HStack(alignment: .top) {
                                 CharacterAvatar(data: character.creator?.avatarData ?? "").frame(width: 44, height: 44)
                                 VStack(alignment: .leading, spacing: 4) {
@@ -207,7 +206,8 @@ struct CharacterPicker: View {
                                     if !character.tags.isEmpty { Text(character.tags.joined(separator: " · ")).font(.caption).foregroundStyle(.secondary) }
                                 }
                             }
-                        }.buttonStyle(.plain).disabled(store.waiting || store.savingProfile)
+                        }.buttonStyle(.plain).disabled(store.savingProfile)
+                        .accessibilityHint("New chat, last chat and saved chats")
                         Spacer()
                         Menu {
                             Button("Edit in My Creator") { editor = CharacterDraft(character) }
@@ -226,6 +226,9 @@ struct CharacterPicker: View {
             .toolbar { ToolbarItem(placement: .topBarTrailing) { Button("Done") { dismiss() } } }
             .task { await store.library(session.client) }
             .sheet(item: $editor) { draft in CharacterEditor(store: store, initial: draft) }
+            .navigationDestination(isPresented: Binding(get: { opened != nil }, set: { if !$0 { opened = nil } })) {
+                if let character = opened { SavedCharacterSessionLibrary(store: store, character: character, close: { dismiss() }) }
+            }
             .confirmationDialog("Delete this character?", isPresented: Binding(get: { deleting != nil }, set: { if !$0 { deleting = nil } }), titleVisibility: .visible) {
                 Button("Delete character", role: .destructive) {
                     if let character = deleting { Task { _ = await store.deleteProfile(character, session.client) } }
@@ -641,35 +644,46 @@ private struct SavedCharacterSessionLibrary: View {
     @Environment(Session.self) private var session
     @Environment(\.dismiss) private var dismiss
     var store: RoleplayStore
+    /// Set when opened from My Characters: new and last chat with this character, and only its saved chats.
+    var character: VeniceCharacter?
+    /// Closes My Characters as well; without it the sheet closes itself.
+    var close: (() -> Void)?
     @State private var opening: SavedCharacterSession?
     @State private var deleting: SavedCharacterSession?
+    // shortcut: matched by name because Core's session-list leaves out the character's id, so a renamed character's older saves show only under Sessions > Saved sessions; return the slug from Core's _saved_list if that matters.
+    private var shown: [SavedCharacterSession] { store.savedSessions.filter { character == nil || $0.characterName == character?.name } }
+    private func finish() { if let close { close() } else { dismiss() } }
     var body: some View {
-        NavigationStack {
-            List {
-                Section { Text("Named conversation snapshots. Opening one creates a continuation copy; save again to keep the continuation.").font(.footnote).foregroundStyle(.secondary) }
-                ForEach(store.savedSessions) { saved in
-                    Button { opening = saved } label: {
-                        VStack(alignment: .leading, spacing: 4) {
-                            Text(saved.label).font(.headline)
-                            Text("\(saved.characterName) · \(saved.messageCount) messages").font(.caption)
-                            Text(saved.model).font(.caption2).foregroundStyle(.secondary)
-                            Text(Date(timeIntervalSince1970: saved.savedAt / 1000), style: .date).font(.caption2)
-                        }
-                    }.disabled(store.waiting)
-                    .swipeActions { Button("Delete", role: .destructive) { deleting = saved } }
-                }
-                if store.savedSessions.isEmpty { Text("No saved character sessions yet.").foregroundStyle(.secondary) }
+        List {
+            if let character {
+                Section {
+                    Button { Task { if await store.newChat(character, session.client) { finish() } } } label: { Label("New chat", systemImage: "plus.bubble") }
+                    Button { Task { if await store.select(character, session.client) { finish() } } } label: { Label("Continue last chat", systemImage: "bubble.left.and.bubble.right") }
+                }.disabled(store.waiting)
             }
-            .navigationTitle("Saved sessions")
-            .toolbar { Button("Done") { dismiss() } }
-            .task { await store.loadSessions(session.client) }
-            .refreshable { await store.loadSessions(session.client) }
-            .confirmationDialog("Open saved session?", isPresented: Binding(get: { opening != nil }, set: { if !$0 { opening = nil } })) {
-                if let saved = opening { Button("Open continuation") { opening = nil; Task { if await store.openSession(saved, session.client) { dismiss() } } } }
-            } message: { Text("Save your current session first if you want to reopen it later. Its history stays on the server.") }
-            .confirmationDialog("Delete saved session?", isPresented: Binding(get: { deleting != nil }, set: { if !$0 { deleting = nil } })) {
-                if let saved = deleting { Button("Delete saved copy", role: .destructive) { deleting = nil; Task { await store.deleteSession(saved, session.client) } } }
-            } message: { Text("This removes the named snapshot. Existing chat history and receipts remain stored.") }
+            Section { Text("Named conversation snapshots. Opening one creates a continuation copy; save again to keep the continuation.").font(.footnote).foregroundStyle(.secondary) } header: { if character != nil { Text("Saved chats") } }
+            ForEach(shown) { saved in
+                Button { opening = saved } label: {
+                    VStack(alignment: .leading, spacing: 4) {
+                        Text(saved.label).font(.headline)
+                        Text("\(saved.characterName) · \(saved.messageCount) messages").font(.caption)
+                        Text(saved.model).font(.caption2).foregroundStyle(.secondary)
+                        Text(Date(timeIntervalSince1970: saved.savedAt / 1000), style: .date).font(.caption2)
+                    }
+                }.disabled(store.waiting)
+                .swipeActions { Button("Delete", role: .destructive) { deleting = saved } }
+            }
+            if shown.isEmpty { Text(character == nil ? "No saved character sessions yet." : "No saved chats yet. Save one from Sessions in the chat.").foregroundStyle(.secondary) }
         }
+        .navigationTitle(character?.name ?? "Saved sessions")
+        .toolbar { Button("Done") { finish() } }
+        .task { await store.loadSessions(session.client) }
+        .refreshable { await store.loadSessions(session.client) }
+        .confirmationDialog("Open saved session?", isPresented: Binding(get: { opening != nil }, set: { if !$0 { opening = nil } })) {
+            if let saved = opening { Button("Open continuation") { opening = nil; Task { if await store.openSession(saved, session.client) { finish() } } } }
+        } message: { Text("Save your current session first if you want to reopen it later. Its history stays on the server.") }
+        .confirmationDialog("Delete saved session?", isPresented: Binding(get: { deleting != nil }, set: { if !$0 { deleting = nil } })) {
+            if let saved = deleting { Button("Delete saved copy", role: .destructive) { deleting = nil; Task { await store.deleteSession(saved, session.client) } } }
+        } message: { Text("This removes the named snapshot. Existing chat history and receipts remain stored.") }
     }
 }
