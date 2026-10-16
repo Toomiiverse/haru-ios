@@ -92,8 +92,8 @@ final class CodeStore {
         case "/exit": exitRequested = true; return true
         case "/stop": await stop(client); return true
         case "/diff": await loadDiff(client); return true
-        case "/new": if let folder { await start(folder, client) } else { problem = "Pick a project folder first." }; return true
-        case "/cd", "/code": if rest.isEmpty { problem = "Which folder? /cd haru-desktop" } else { await start(rest, client) }; return true
+        case "/new": await start(folder ?? "", client); return true   // no project yet: a quick session
+        case "/cd", "/code": await start(rest, client); return true   // no folder named: a quick session
         case "/model":
             let wanted = rest.lowercased()
             if let m = models.first(where: { $0.name.lowercased().contains(wanted) || $0.id.lowercased().contains(wanted) }), !wanted.isEmpty { await setModel(m.id, client) }

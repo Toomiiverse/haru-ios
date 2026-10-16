@@ -55,6 +55,9 @@ struct CodeView: View {
                 .disabled(store.folder == nil).accessibilityLabel("Show changes")
             Button { if let folder = store.folder { Task { await store.start(folder, session.client) } } } label: { Image(systemName: "square.and.pencil") }
                 .disabled(store.folder == nil || store.busy).accessibilityLabel("New session")
+            Button { Task { await store.start("", session.client) } } label: { Image(systemName: "plus") }
+                .disabled(store.busy).accessibilityLabel("New quick session")
+                .accessibilityHint("Starts a session in the quick-code scratch folder")
         }
         .font(.subheadline)
         .padding(.horizontal, 16)
@@ -63,6 +66,11 @@ struct CodeView: View {
 
     private var projects: some View {
         List {
+            Section {
+                Button { Task { await store.start("", session.client) } } label: { Label("Quick session", systemImage: "plus") }
+            } footer: {
+                Text("For small changes and try-outs: a scratch folder, quick-code, kept in git on the server.")
+            }
             Section("Pick a project") {
                 ForEach(store.projects, id: \.self) { name in
                     Button { Task { await store.start(name, session.client) } } label: { Label(name, systemImage: "folder") }
