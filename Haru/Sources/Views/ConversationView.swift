@@ -5,40 +5,64 @@ import UniformTypeIdentifiers
 struct ConversationView: View {
     @Environment(Session.self) private var session
     @Environment(ChatStore.self) private var chat
+    @Environment(Navigator.self) private var nav
     @Environment(\.scenePhase) private var phase
     @State private var roleplay = RoleplayStore()
     @State private var chooseCharacter = false
+    @State private var code = CodeStore()
+    /// Coding mode is the phone's alone: no server mode to keep, and Haru is not part of it.
+    @State private var coding = false
 
     var body: some View {
         VStack(spacing: 0) {
             Picker("Conversation mode", selection: Binding(
-                get: { roleplay.state?.mode ?? "ai" },
+                get: { coding ? "code" : roleplay.state?.mode ?? "ai" },
                 set: { mode in
+                    if mode == "code" { coding = true; return }
+                    if coding { leaveCode(); if mode == (roleplay.state?.mode ?? "ai") { return } }
                     if mode == "character", roleplay.state?.character == nil { chooseCharacter = true }
                     else { Task { _ = await roleplay.mode(mode, session.client) } }
                 }
             )) {
                 Text("AI").tag("ai")
                 Text("Character").tag("character")
+                Text("Code").tag("code")
             }
             .pickerStyle(.segmented)
             .padding(.horizontal, 16)
             .padding(.vertical, 8)
-            .disabled(roleplay.state == nil || roleplay.waiting || chat.busy || chat.call != nil || chat.micOn)
-            .accessibilityHint("Switch between Haru and your custom characters")
-            if roleplay.state?.mode == "character" {
+            .disabled((roleplay.state == nil && !coding) || roleplay.waiting || chat.busy || chat.call != nil || chat.micOn)
+            .accessibilityHint("Switch between Haru, your custom characters, and coding with the coder")
+            if coding {
+                CodeView(store: code)
+            } else if roleplay.state?.mode == "character" {
                 CharacterChatView(store: roleplay, chooseCharacter: $chooseCharacter)
             } else { ChatView() }
         }
+        .onChange(of: nav.wantsCode) { _, folder in
+            guard let folder else { return }
+            nav.wantsCode = nil
+            code.pendingFolder = folder
+            if coding { Task { await code.open(session.client) } } else { coding = true }
+        }
+        .onChange(of: code.exitRequested) { _, now in if now { leaveCode() } }
         .background(Color("LaunchBackground"))
         .task(id: session.baseURLString) { await roleplay.load(session.client) }
         .onChange(of: phase) { _, now in
             if now == .active { Task { await roleplay.load(session.client) } }
         }
         .sheet(isPresented: $chooseCharacter) { CharacterPicker(store: roleplay) }
+        .onAppear { if let folder = nav.wantsCode { nav.wantsCode = nil; code.pendingFolder = folder; coding = true } }
         .alert("Character mode", isPresented: Binding(get: { roleplay.problem != nil }, set: { if !$0 { roleplay.problem = nil } })) {
             Button("OK") { roleplay.problem = nil }
         } message: { Text(roleplay.problem ?? "") }
+    }
+
+    private func leaveCode() {
+        coding = false
+        code.exitRequested = false
+        let client = session.client
+        Task { await code.leave(client) }
     }
 }
 

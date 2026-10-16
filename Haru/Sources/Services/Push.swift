@@ -150,7 +150,8 @@ final class PushDelegate: NSObject, UIApplicationDelegate, UNUserNotificationCen
             guard let id = haru?["eventId"] as? String else { return }
             await Push.holdingOn { await Push.markDone(id) }
         case UNNotificationDefaultActionIdentifier:
-            await MainActor.run { Navigator.shared.openPush(kind: kind) }
+            let url = haru?["url"] as? String
+            await MainActor.run { Navigator.shared.openPush(kind: kind, url: url) }
         default:
             break
         }

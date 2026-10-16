@@ -16,13 +16,16 @@ final class Navigator {
     var wantsTalk = false
     /// Set by haru://call and the Call Haru shortcut; the chat screen places the call.
     var wantsCall = false
+    /// Set by /code, haru://code and a coder's push: the chat screen switches to coding mode (with this folder, if any).
+    var wantsCode: String?
 
     /// A tapped notification: a reminder lands on the list, anything else on the chat.
-    func openPush(kind: String?) {
+    func openPush(kind: String?, url: String? = nil) {
+        if let url, url.hasPrefix("haru://code"), let link = URL(string: url) { open(link); return }
         tab = kind == "events" ? .status : .chat
     }
 
-    /// haru://chat, haru://talk, haru://call, haru://status, haru://diary, haru://her, haru://more.
+    /// haru://chat, haru://talk, haru://call, haru://code, haru://status, haru://diary, haru://her, haru://more.
     func open(_ url: URL) {
         guard url.scheme?.lowercased() == "haru" else { return }
         let where_ = (url.host(percentEncoded: false) ?? url.path.trimmingCharacters(in: CharacterSet(charactersIn: "/"))).lowercased()
@@ -33,6 +36,9 @@ final class Navigator {
         case "call":
             tab = .chat
             wantsCall = true
+        case "code":
+            tab = .chat
+            wantsCode = URLComponents(url: url, resolvingAgainstBaseURL: false)?.queryItems?.first { $0.name == "folder" }?.value ?? ""
         case "status": tab = .status
         case "diary": tab = .diary
         case "her": tab = .her

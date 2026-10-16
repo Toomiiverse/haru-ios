@@ -212,6 +212,32 @@ struct HaruClient: Sendable {
         }
     }
 
+    /// Coding mode's stream (GET /api/code/events): the whole state first, then each change, until the server or the caller ends it.
+    func codeEvents() -> AsyncThrowingStream<CodeFrame, Error> {
+        AsyncThrowingStream { continuation in
+            let task = Task {
+                do {
+                    var req = request("/api/code/events", method: "GET")
+                    req.setValue("text/event-stream", forHTTPHeaderField: "Accept")
+                    req.timeoutInterval = 3600   // a quiet coder sends only heartbeats
+                    let (bytes, response) = try await session.bytes(for: req)
+                    if let http = response as? HTTPURLResponse, !(200..<300).contains(http.statusCode) {
+                        var data = Data()
+                        for try await byte in bytes { data.append(byte) }
+                        try Self.check(response, data)
+                    }
+                    for try await line in bytes.lines {
+                        guard line.hasPrefix("data:"), let data = line.dropFirst(5).data(using: .utf8),
+                              let frame = try? JSONDecoder().decode(CodeFrame.self, from: data) else { continue }
+                        continuation.yield(frame)
+                    }
+                    continuation.finish()
+                } catch { continuation.finish(throwing: error) }
+            }
+            continuation.onTermination = { _ in task.cancel() }
+        }
+    }
+
     /// Forgets the cookies for this server — the client half of signing out.
     func forgetCookies() {
         for cookie in HTTPCookieStorage.shared.cookies(for: base) ?? [] {

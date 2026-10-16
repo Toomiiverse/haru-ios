@@ -538,6 +538,8 @@ struct ChatView: View {
             typing = true
         }
         let text = draft
+        // /code is not for her: it opens coding mode, and the words never reach her chat.
+        if let folder = CodeStore.codeCommand(text) { draft = ""; Navigator.shared.wantsCode = folder; return }
         draft = ""
         lastSent = (text, Date())
         let sent = await chat.send(text)
