@@ -1,5 +1,6 @@
 import Foundation
 import Observation
+import UIKit
 
 /// Presentation and durable receipt polling. Core owns mode and scene state.
 @MainActor @Observable
@@ -14,13 +15,17 @@ final class RoleplayStore {
     var creatorWorking = false
     var problem: String?
     var changing = false
+    var drawing = false
     var loadingCatalog = false
     var hasMore = false
+    var pictures: [String: UIImage] = [:]
+    var pictureFailed: Set<String> = []
     private var offset = 0
     private var search = ""
+    private var fetching: Set<String> = []
     private var poller: Task<Void, Never>?
     private var unconfirmedId: String?
-    var waiting: Bool { changing || state?.pendingRequestId != nil || unconfirmedId != nil }
+    var waiting: Bool { changing || drawing || state?.pendingRequestId != nil || unconfirmedId != nil }
 
     init(defaults: UserDefaults = .standard) {
         let key = "haru.character.session"
@@ -220,6 +225,38 @@ final class RoleplayStore {
             problem = "Delivery could not be confirmed. Check the existing reply before sending again."
             return false
         }
+    }
+    /// Draw the character from her own profile plus the current scene; the picture is kept in the chat.
+    func draw(_ client: HaruClient) async {
+        guard !waiting, let current = state, current.mode == "character" else { return }
+        drawing = true
+        defer { drawing = false }
+        do {
+            let made: RoleplayDraw = try await client.post("/api/roleplay", body("draw"))
+            if let image = Self.decode(made.image) { pictures[made.file] = image }
+            state = made.state
+            problem = nil
+        } catch {
+            problem = error.localizedDescription
+            await load(client)  // kept server-side even if the reply was cut off
+        }
+    }
+    /// Fetch a kept picture by its marker so a refreshed chat shows it again.
+    func picture(_ file: String, _ client: HaruClient) async {
+        guard !file.isEmpty, pictures[file] == nil, pictureFailed.contains(file) == false, fetching.insert(file).inserted else { return }
+        defer { fetching.remove(file) }
+        do {
+            let bytes: RoleplayPicture = try await client.post("/api/roleplay", body("picture", ["file": .string(file)]))
+            if let image = Self.decode(bytes.image) { pictures[file] = image } else { pictureFailed.insert(file) }
+        } catch { pictureFailed.insert(file) }
+    }
+    /// The `image:` marker a kept picture message carries instead of prose.
+    static func pictureFile(_ message: RoleplayMessage) -> String? {
+        message.role == "assistant" && message.content.hasPrefix("image:") ? String(message.content.dropFirst(6)) : nil
+    }
+    private static func decode(_ base64: String) -> UIImage? {
+        guard let data = Data(base64Encoded: base64) else { return nil }
+        return UIImage(data: data)
     }
     func regenerate(_ messageId: String, _ client: HaruClient) async -> Bool {
         guard !waiting, let current = state, current.mode == "character" else { return false }

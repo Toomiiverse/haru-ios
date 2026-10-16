@@ -46,6 +46,13 @@ struct RoleplayReceipt: Codable, Sendable {
     let error: String?
     let sceneId: String?
 }
+struct RoleplayDraw: Codable, Sendable {
+    let file: String
+    let seed: Int?
+    let image: String
+    let state: RoleplayState
+}
+struct RoleplayPicture: Codable, Sendable { let image: String }
 
 struct CreatorDocument: Codable, Identifiable, Equatable, Sendable {
     var id: String { name }

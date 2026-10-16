@@ -96,25 +96,39 @@ struct CharacterChatView: View {
                                 ContentUnavailableView("Set the scene", systemImage: "theatermasks", description: Text("Talk to \(store.state?.character?.name ?? "your character") or describe where the story begins."))
                             }
                             ForEach(store.state?.messages ?? []) { message in
-                                HStack {
-                                    if message.role == "user" { Spacer(minLength: 36) }
-                                    VStack(alignment: .leading, spacing: 4) {
-                                        Text(message.role == "user" ? "You" : store.state?.character?.name ?? "Character")
-                                            .font(.caption).foregroundStyle(.secondary)
-                                        CharacterMessageText(content: message.content).textSelection(.enabled)
+                                if let file = RoleplayStore.pictureFile(message) {
+                                    HStack {
+                                        VStack(alignment: .leading, spacing: 4) {
+                                            Text(store.state?.character?.name ?? "Character")
+                                                .font(.caption).foregroundStyle(.secondary)
+                                            CharacterPicture(store: store, file: file)
+                                        }
+                                        .padding(12)
+                                        .background(Color.secondary.opacity(0.12), in: RoundedRectangle(cornerRadius: 16))
+                                        Spacer(minLength: 36)
                                     }
-                                    .padding(12)
-                                    .background(message.role == "user" ? Color.accentColor.opacity(0.2) : Color.secondary.opacity(0.12), in: RoundedRectangle(cornerRadius: 16))
-                                    if message.role != "user" { Spacer(minLength: 36) }
-                                }
-                                .contextMenu {
-                                    if !message.id.hasPrefix("intro:") {
-                                        Button("Regenerate reply", systemImage: "arrow.clockwise") { regenerateMessage = message }.disabled(store.waiting)
+                                    .id(message.id)
+                                } else {
+                                    HStack {
+                                        if message.role == "user" { Spacer(minLength: 36) }
+                                        VStack(alignment: .leading, spacing: 4) {
+                                            Text(message.role == "user" ? "You" : store.state?.character?.name ?? "Character")
+                                                .font(.caption).foregroundStyle(.secondary)
+                                            CharacterMessageText(content: message.content).textSelection(.enabled)
+                                        }
+                                        .padding(12)
+                                        .background(message.role == "user" ? Color.accentColor.opacity(0.2) : Color.secondary.opacity(0.12), in: RoundedRectangle(cornerRadius: 16))
+                                        if message.role != "user" { Spacer(minLength: 36) }
                                     }
+                                    .contextMenu {
+                                        if !message.id.hasPrefix("intro:") {
+                                            Button("Regenerate reply", systemImage: "arrow.clockwise") { regenerateMessage = message }.disabled(store.waiting)
+                                        }
+                                    }
+                                    .id(message.id)
                                 }
-                                .id(message.id)
                             }
-                            if store.waiting { HStack { ProgressView(); Text("Waiting for the character…").foregroundStyle(.secondary) } }
+                            if store.waiting { HStack { ProgressView(); Text(store.drawing ? "Drawing the scene…" : "Waiting for the character…").foregroundStyle(.secondary) } }
                             Color.clear.frame(height: 1).id("end")
                         }.padding(.horizontal, 16)
                     }
@@ -124,6 +138,11 @@ struct CharacterChatView: View {
                 HStack(alignment: .bottom, spacing: 10) {
                     TextField("Set the scene…", text: $draft, axis: .vertical)
                         .lineLimit(1...6).textFieldStyle(.roundedBorder)
+                    Button {
+                        Task { await store.draw(session.client) }
+                    } label: { Image(systemName: "photo.on.rectangle.angled").font(.title3) }
+                    .accessibilityLabel("Draw this scene with the character")
+                    .disabled(store.waiting || store.state?.messages.contains(where: { $0.role == "user" }) != true)
                     Button {
                         let text = draft
                         Task { if await store.send(text, session.client), draft == text { draft = "" } }
@@ -176,6 +195,28 @@ struct CharacterChatView: View {
         refreshing = true
         defer { refreshing = false }
         await store.load(session.client)
+    }
+}
+
+private struct CharacterPicture: View {
+    @Environment(Session.self) private var session
+    var store: RoleplayStore
+    var file: String
+    var body: some View {
+        Group {
+            if let image = store.pictures[file] {
+                Image(uiImage: image).resizable().scaledToFit()
+                    .frame(maxWidth: 260)
+                    .clipShape(RoundedRectangle(cornerRadius: 12))
+            } else if store.pictureFailed.contains(file) {
+                Label("Picture unavailable", systemImage: "photo")
+                    .font(.footnote).foregroundStyle(.secondary)
+            } else {
+                ProgressView().frame(width: 160, height: 160)
+            }
+        }
+        .task { await store.picture(file, session.client) }
+        .accessibilityLabel("Picture from \(store.state?.character?.name ?? "the character")")
     }
 }
 
