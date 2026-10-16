@@ -14,6 +14,7 @@ struct LoraStatus: Decodable {
     let job: String?
     let pictures: [String: Bool?]?
     let lora: String?
+    let active: String?
     let loras: [String]
 }
 
@@ -111,6 +112,11 @@ struct LoraView: View {
                         }
                         .disabled(previewing != nil || running)
                     }
+                    Picker("Her selfies use", selection: Binding(get: { status?.active ?? "" }, set: { choice in Task { await use(choice.isEmpty ? nil : choice) } })) {
+                        Text("No LoRA").tag("")
+                        ForEach(loras, id: \.self) { Text($0).tag($0) }
+                    }
+                    .disabled(running)
                     if let preview {
                         Image(uiImage: preview).resizable().scaledToFit()
                             .clipShape(RoundedRectangle(cornerRadius: 12))
@@ -164,6 +170,15 @@ struct LoraView: View {
         defer { busy = false }
         do {
             status = try await artist.post("/haru/lora/train", ["steps": .number(Double(steps))])
+            problem = nil
+        } catch {
+            problem = error.localizedDescription
+        }
+    }
+
+    private func use(_ lora: String?) async {
+        do {
+            status = try await artist.post("/haru/lora/use", ["lora": lora.map { .string($0) } ?? .null])
             problem = nil
         } catch {
             problem = error.localizedDescription
