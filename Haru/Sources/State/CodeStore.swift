@@ -22,13 +22,6 @@ final class CodeStore {
     var pendingFolder: String?
     private var streamTask: Task<Void, Never>?
 
-    /// "/code" or "/code <folder>" typed to her: the folder ("" for none), else nil.
-    nonisolated static func codeCommand(_ text: String) -> String? {
-        let t = text.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard t == "/code" || t.hasPrefix("/code ") else { return nil }
-        return String(t.dropFirst(5)).trimmingCharacters(in: .whitespaces)
-    }
-
     var modelName: String { models.first { $0.id == model }?.name ?? "Model" }
 
     func open(_ client: HaruClient) async {

@@ -31,6 +31,13 @@ struct CodeItem: Decodable, Identifiable, Equatable {
     }
 }
 
+/// "/code" or "/code <folder>" typed to her: the folder ("" for none), else nil.
+func codeCommand(_ text: String) -> String? {
+    let t = text.trimmingCharacters(in: .whitespacesAndNewlines)
+    guard t == "/code" || t.hasPrefix("/code ") else { return nil }
+    return String(t.dropFirst(5)).trimmingCharacters(in: .whitespaces)
+}
+
 struct CodeModel: Decodable, Hashable { let id: String; let name: String }
 struct CodeSpent: Decodable, Equatable { let today: Double; let cap: Double }
 

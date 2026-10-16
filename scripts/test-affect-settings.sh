@@ -4,7 +4,7 @@ cd "$(dirname "$0")/.."
 test_dir=$(mktemp -d)
 trap 'rm -rf "$test_dir"' EXIT
 swiftc -parse-as-library -o "$test_dir/affect-settings" \
-  Haru/Sources/Net/HaruClient.swift Haru/Sources/Model/Models.swift \
+  Haru/Sources/Net/HaruClient.swift Haru/Sources/Model/Models.swift Haru/Sources/Model/Code.swift \
   Haru/Sources/Model/JSONValue.swift Haru/Sources/Model/AffectSettings.swift \
   Haru/Sources/Model/MoodLook.swift Haru/Sources/Model/AffectStatus.swift \
   scripts/affect-settings.test.swift
