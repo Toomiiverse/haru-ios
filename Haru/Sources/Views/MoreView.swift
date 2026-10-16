@@ -38,6 +38,7 @@ struct MoreView: View {
                 Section {
                     NavigationLink("Her photos") { AlbumView() }
                     NavigationLink("Her look") { LookView() }
+                    NavigationLink("Her LoRA") { LoraView() }
                 }
                 Section("Her memory") {
                     NavigationLink("What she remembers") { MemoryView() }
