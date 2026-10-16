@@ -241,13 +241,15 @@ final class RoleplayStore {
             await load(client)  // kept server-side even if the reply was cut off
         }
     }
-    /// Fetch a kept picture by its marker so a refreshed chat shows it again.
+    /// Fetch a kept picture by its marker so a refreshed chat shows it again. A failure is shown as a
+    /// placeholder and simply retried the next time the bubble appears, so one bad moment doesn't hide it.
     func picture(_ file: String, _ client: HaruClient) async {
-        guard !file.isEmpty, pictures[file] == nil, pictureFailed.contains(file) == false, fetching.insert(file).inserted else { return }
+        guard !file.isEmpty, pictures[file] == nil, fetching.insert(file).inserted else { return }
         defer { fetching.remove(file) }
         do {
             let bytes: RoleplayPicture = try await client.post("/api/roleplay", body("picture", ["file": .string(file)]))
-            if let image = Self.decode(bytes.image) { pictures[file] = image } else { pictureFailed.insert(file) }
+            if let image = Self.decode(bytes.image) { pictures[file] = image; pictureFailed.remove(file) }
+            else { pictureFailed.insert(file) }
         } catch { pictureFailed.insert(file) }
     }
     /// The `image:` marker a kept picture message carries instead of prose.
