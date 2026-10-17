@@ -9,15 +9,23 @@ import Observation
 final class Navigator {
     static let shared = Navigator()
 
-    enum Tab: Hashable { case chat, status, diary, her, more }
+    enum Tab: Hashable { case chat, code, status, her, more }
 
     var tab: Tab = .chat
     /// Set by haru://talk; the chat screen opens the ear and clears it.
     var wantsTalk = false
     /// Set by haru://call and the Call Haru shortcut; the chat screen places the call.
     var wantsCall = false
-    /// Set by /code, haru://code and a coder's push: the chat screen switches to coding mode (with this folder, if any).
+    /// Set by /code, haru://code and a coder's push: the Code tab opens this folder ("" for a quick session).
     var wantsCode: String?
+    /// Set by haru://diary: the Her tab opens her diary.
+    var wantsDiary = false
+
+    /// /code typed to her, haru://code, a coder's push: over to the Code tab.
+    func openCode(_ folder: String?) {
+        tab = .code
+        wantsCode = folder
+    }
 
     /// A tapped notification: a reminder lands on the list, anything else on the chat.
     func openPush(kind: String?, url: String? = nil) {
@@ -37,10 +45,11 @@ final class Navigator {
             tab = .chat
             wantsCall = true
         case "code":
-            tab = .chat
-            wantsCode = URLComponents(url: url, resolvingAgainstBaseURL: false)?.queryItems?.first { $0.name == "folder" }?.value ?? ""
+            openCode(URLComponents(url: url, resolvingAgainstBaseURL: false)?.queryItems?.first { $0.name == "folder" }?.value)
         case "status": tab = .status
-        case "diary": tab = .diary
+        case "diary":
+            tab = .her
+            wantsDiary = true
         case "her": tab = .her
         case "more": tab = .more
         default: tab = .chat

@@ -7,8 +7,8 @@ struct DiaryView: View {
     @State private var loaded = false
     @State private var problem: String?
 
+    /// Pushed from the Her tab, inside its navigation stack.
     var body: some View {
-        NavigationStack {
             List {
                 if let problem {
                     Text(problem).foregroundStyle(.secondary)
@@ -37,8 +37,7 @@ struct DiaryView: View {
             }
             .navigationTitle("Her diary")
             .refreshable { await load() }
-        }
-        .task { await load() }
+            .task { await load() }
     }
 
     private func load() async {

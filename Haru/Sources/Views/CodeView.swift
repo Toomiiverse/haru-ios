@@ -4,6 +4,7 @@ import SwiftUI
 /// Allow / Deny, a stop button while it works, the diff, and earlier sessions. Commands: /new /stop /diff /sessions /model /cd /exit.
 struct CodeView: View {
     @Environment(Session.self) private var session
+    @Environment(Navigator.self) private var nav
     var store: CodeStore
     @State private var draft = ""
     @State private var showDiff = false
@@ -16,14 +17,27 @@ struct CodeView: View {
             if store.folder == nil { projects } else { transcript }
             composer
         }
-        .task { await store.open(session.client) }
-        .onDisappear { store.close() }
+        // A folder asked for elsewhere (/code in the chat, a link, a push) is taken here, before the session loads.
+        .task { store.pendingFolder = takeFolder(); await store.open(session.client) }
+        .onChange(of: nav.wantsCode) { _, folder in
+            guard folder != nil else { return }
+            store.pendingFolder = takeFolder()
+            Task { await store.open(session.client) }
+        }
+        .onChange(of: store.exitRequested) { _, now in if now { store.exitRequested = false; nav.tab = .chat } }
+        // Leaving the tab: the stream closes and Haru hears once what was worked on.
+        .onDisappear { let client = session.client; Task { await store.leave(client) } }
         .onChange(of: store.diff == nil) { _, none in if !none { showDiff = true } }
         .sheet(isPresented: $showDiff, onDismiss: { store.diff = nil }) { CodeDiffSheet(diff: store.diff) }
         .sheet(isPresented: Binding(get: { store.showRecent }, set: { store.showRecent = $0 })) { CodeRecentSheet(store: store) }
         .alert("Coding mode", isPresented: Binding(get: { store.problem != nil }, set: { if !$0 { store.problem = nil } })) {
             Button("OK") { store.problem = nil }
         } message: { Text(store.problem ?? "") }
+    }
+
+    private func takeFolder() -> String? {
+        defer { nav.wantsCode = nil }
+        return nav.wantsCode
     }
 
     private var header: some View {

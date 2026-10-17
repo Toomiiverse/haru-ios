@@ -3,6 +3,7 @@ import SwiftUI
 /// Her own things — nights out, likes, wants: GET /api/her.
 struct HerView: View {
     @Environment(Session.self) private var session
+    @Environment(Navigator.self) private var nav
     @State private var her: Her?
     @State private var problem: String?
 
@@ -23,11 +24,23 @@ struct HerView: View {
                             Image(systemName: "leaf.fill")
                         }
                     }
+                    NavigationLink {
+                        DiaryView()
+                    } label: {
+                        Label {
+                            VStack(alignment: .leading, spacing: 4) {
+                                Text("Her diary")
+                                Text(her.map { "Entries: " + diary($0.diary) } ?? "What she writes about her days.")
+                                    .font(.footnote).foregroundStyle(.secondary)
+                            }
+                        } icon: {
+                            Image(systemName: "book.closed.fill")
+                        }
+                    }
                 }
                 if let her {
                     Section {
                         LabeledContent("Nights out", value: nights(her.nightsOut))
-                        LabeledContent("Diary entries", value: diary(her.diary))
                     }
                     if !her.things.isEmpty {
                         Section("Her things") {
@@ -93,6 +106,7 @@ struct HerView: View {
             }
             .navigationTitle("Her")
             .refreshable { await load() }
+            .navigationDestination(isPresented: Binding(get: { nav.wantsDiary }, set: { nav.wantsDiary = $0 })) { DiaryView() }
         }
         .task { await load() }
     }

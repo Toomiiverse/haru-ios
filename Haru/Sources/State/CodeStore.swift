@@ -18,7 +18,7 @@ final class CodeStore {
     var recent: [CodeSessionRow] = []
     var showRecent = false
     var busy = false
-    /// Set by /exit; ConversationView switches back to her.
+    /// Set by /exit; the Code tab hands back to the chat.
     var exitRequested = false
     /// A folder named with /code <folder> before the screen opened.
     var pendingFolder: String?

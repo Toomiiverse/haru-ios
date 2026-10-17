@@ -24,19 +24,23 @@ struct RootView: View {
 
 struct MainTabs: View {
     @Environment(Navigator.self) private var nav
+    /// Kept here so a coding session's cards survive switching tabs.
+    @State private var code = CodeStore()
 
     var body: some View {
         @Bindable var nav = nav
         TabView(selection: $nav.tab) {
-            ConversationView()
+            ChatView()
+                .background(Color("LaunchBackground"))
                 .tabItem { Label("Chat", systemImage: "bubble.left.and.bubble.right.fill") }
                 .tag(Navigator.Tab.chat)
+            CodeView(store: code)
+                .background(Color("LaunchBackground"))
+                .tabItem { Label("Code", systemImage: "chevron.left.forwardslash.chevron.right") }
+                .tag(Navigator.Tab.code)
             StatusView()
                 .tabItem { Label("Status", systemImage: "heart.text.square.fill") }
                 .tag(Navigator.Tab.status)
-            DiaryView()
-                .tabItem { Label("Diary", systemImage: "book.closed.fill") }
-                .tag(Navigator.Tab.diary)
             HerView()
                 .tabItem { Label("Her", systemImage: "sparkles") }
                 .tag(Navigator.Tab.her)
