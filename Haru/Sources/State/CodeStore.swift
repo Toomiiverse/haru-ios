@@ -102,6 +102,11 @@ final class CodeStore {
         default: break
         }
         guard folder != nil else { problem = "Pick a project folder first."; return false }
+        // !command: his own terminal line in the project folder; its card arrives on the stream.
+        if let command = terminalCommand(t) {
+            guard !command.isEmpty else { problem = "Type a command after the !."; return false }
+            return await call(client) { let _: CodeOK = try await client.post("/api/code/shell", ["command": .string(command)]) }
+        }
         items.append(CodeItem(kind: "you", id: "local-" + UUID().uuidString, text: t))
         running = true
         let sent = await call(client) { let _: CodeOK = try await client.post("/api/code/prompt", ["text": .string(t)]) }

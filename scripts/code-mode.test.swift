@@ -17,6 +17,13 @@ import Foundation
         assert(codeCommand("/code") == "")
         assert(codeCommand("  /code haru-desktop ") == "haru-desktop")
         assert(codeCommand("/codex") == nil && codeCommand("what is /code") == nil, "only a leading /code is a command")
+        assert(terminalCommand("!git status") == "git status" && terminalCommand("  ! ls -la ") == "ls -la" && terminalCommand("!") == "")
+        assert(terminalCommand("run git status!") == nil, "only a leading ! is a command")
+
+        // A terminal card: started with the command, ended with output and a non-zero exit.
+        let terminal = card([#"{"kind":"tool","id":"sh_1","name":"terminal","status":"running","title":"npm test"}"#,
+                             #"{"kind":"tool","id":"sh_1","name":"terminal","status":"done","title":"npm test","output":"1 failed\n","exit":1}"#])
+        assert(terminal.title == "npm test" && terminal.exit == 1 && terminal.output == "1 failed\n")
 
         // A tool card: started with its name only, then its title, then its result; an empty title never wipes the real one.
         let tool = card([#"{"kind":"tool","id":"t1","name":"shell","status":"running","title":""}"#,

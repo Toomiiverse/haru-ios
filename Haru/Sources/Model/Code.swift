@@ -38,6 +38,13 @@ func codeCommand(_ text: String) -> String? {
     return String(t.dropFirst(5)).trimmingCharacters(in: .whitespaces)
 }
 
+/// "!command" typed in coding mode: the command to run in the project folder, else nil.
+func terminalCommand(_ text: String) -> String? {
+    let t = text.trimmingCharacters(in: .whitespacesAndNewlines)
+    guard t.hasPrefix("!") else { return nil }
+    return String(t.dropFirst()).trimmingCharacters(in: .whitespaces)
+}
+
 struct CodeModel: Decodable, Hashable { let id: String; let name: String }
 struct CodeSpent: Decodable, Equatable { let today: Double; let cap: Double }
 

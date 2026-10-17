@@ -113,7 +113,14 @@ struct CodeView: View {
 
     private var composer: some View {
         HStack(alignment: .bottom, spacing: 8) {
-            TextField(store.folder == nil ? "/code <folder>" : "Tell the coder…", text: $draft, axis: .vertical)
+            // Terminal: a leading "!" runs the line as a command in the project folder, like Claude Code.
+            Button { draft = terminalCommand(draft) != nil ? String(draft.drop(while: { $0 == " " }).dropFirst()) : "!" + draft; typing = true } label: {
+                Image(systemName: "terminal").font(.title3).foregroundStyle(terminalCommand(draft) != nil ? Color.orange : Color.secondary)
+            }
+            .padding(.bottom, 6)
+            .disabled(store.folder == nil)
+            .accessibilityLabel(terminalCommand(draft) != nil ? "Terminal on: the line runs as a command" : "Run a terminal command")
+            TextField(store.folder == nil ? "/code <folder>" : "Tell the coder…  (!cmd runs a command)", text: $draft, axis: .vertical)
                 .lineLimit(1...8)
                 .font(.body.monospaced())
                 .textInputAutocapitalization(.never)
@@ -121,6 +128,7 @@ struct CodeView: View {
                 .padding(.horizontal, 12)
                 .padding(.vertical, 8)
                 .background(Color(uiColor: .secondarySystemBackground), in: RoundedRectangle(cornerRadius: 18))
+                .overlay(RoundedRectangle(cornerRadius: 18).stroke(Color.orange, lineWidth: terminalCommand(draft) != nil ? 1.5 : 0))
                 .focused($typing)
             if store.running && draft.isEmpty {
                 Button { Task { await store.stop(session.client) } } label: { Image(systemName: "stop.circle.fill").font(.title) }
@@ -167,7 +175,7 @@ private struct CodeCard: View {
         switch item.name ?? "" {
         case "read": return "doc.text"
         case "edit", "write", "patch": return "pencil"
-        case "shell", "bash": return "terminal"
+        case "shell", "bash", "terminal": return "terminal"
         case "grep", "glob", "list": return "magnifyingglass"
         case "webfetch", "websearch": return "globe"
         case "todowrite": return "checklist"
