@@ -78,3 +78,23 @@ struct CodeFrame: Decodable {
 struct CodeFileDiff: Decodable, Identifiable { let file: String; let additions: Int; let deletions: Int; let patch: String; var id: String { file } }
 struct CodeDiff: Decodable { let files: [CodeFileDiff]; let untracked: [String] }
 struct CodeOK: Decodable {}
+
+/// One of his earlier coding-mode sessions (GET /api/code/sessions).
+struct CodeSessionRow: Decodable, Identifiable, Equatable {
+    let id: String
+    let folder: String
+    let task: String
+    let at: String
+    let updatedAt: String
+    let model: String?
+    let archived: Bool
+    let current: Bool
+
+    /// When it was last worked on; the server sends ISO 8601 with milliseconds.
+    var updated: Date? {
+        let f = ISO8601DateFormatter()
+        f.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+        return f.date(from: updatedAt) ?? ISO8601DateFormatter().date(from: updatedAt)
+    }
+}
+struct CodeSessions: Decodable { let sessions: [CodeSessionRow] }

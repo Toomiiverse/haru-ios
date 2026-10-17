@@ -43,6 +43,9 @@ import Foundation
         // The state frame decodes whole, including fields the cards ignore.
         let state = frame(#"{"kind":"state","folder":"repo","model":"haru/mimo-v2.6-pro","models":[{"id":"haru/mimo-v2.6-pro","name":"MiMo V2.6 Pro"}],"projects":["repo"],"sessionId":"ses_1","spent":{"today":0.1,"cap":5,"resetsAt":null},"items":[{"kind":"you","id":"u1","text":"hi"}],"running":false}"#)
         assert(state.folder == "repo" && state.items?.count == 1 && state.spent?.cap == 5 && state.models?.first?.name == "MiMo V2.6 Pro")
+        // A recent-sessions row, as GET /api/code/sessions sends it.
+        let rows = try! JSONDecoder().decode(CodeSessions.self, from: Data(#"{"sessions":[{"id":"ses_1","folder":"repo","task":"Fix add()","at":"2026-10-17T17:00:00.000Z","updatedAt":"2026-10-17T17:05:00.123Z","model":"haru/qwen-3-6-plus-uncensored","archived":false,"current":true}]}"#.utf8))
+        assert(rows.sessions.first?.folder == "repo" && rows.sessions.first?.current == true && rows.sessions.first?.updated != nil)
         print("code mode: ok")
     }
 }

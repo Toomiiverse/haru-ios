@@ -1,7 +1,7 @@
 import SwiftUI
 
 /// Coding mode: the coder's steps as cards (Codex / Claude Code-style), his prompts, its questions with
-/// Allow / Deny, a stop button while it works, and the diff. Commands: /new /stop /diff /model /cd /exit.
+/// Allow / Deny, a stop button while it works, the diff, and earlier sessions. Commands: /new /stop /diff /sessions /model /cd /exit.
 struct CodeView: View {
     @Environment(Session.self) private var session
     var store: CodeStore
@@ -20,6 +20,7 @@ struct CodeView: View {
         .onDisappear { store.close() }
         .onChange(of: store.diff == nil) { _, none in if !none { showDiff = true } }
         .sheet(isPresented: $showDiff, onDismiss: { store.diff = nil }) { CodeDiffSheet(diff: store.diff) }
+        .sheet(isPresented: Binding(get: { store.showRecent }, set: { store.showRecent = $0 })) { CodeRecentSheet(store: store) }
         .alert("Coding mode", isPresented: Binding(get: { store.problem != nil }, set: { if !$0 { store.problem = nil } })) {
             Button("OK") { store.problem = nil }
         } message: { Text(store.problem ?? "") }
@@ -51,6 +52,8 @@ struct CodeView: View {
                     .font(.caption.monospacedDigit()).foregroundStyle(.secondary)
                     .accessibilityLabel(String(format: "Spent %.2f of %.0f dollars today", spent.today, spent.cap))
             }
+            Button { store.showRecent = true } label: { Image(systemName: "clock.arrow.circlepath") }
+                .accessibilityLabel("Recent sessions")
             Button { Task { await store.loadDiff(session.client) } } label: { Image(systemName: "plusminus") }
                 .disabled(store.folder == nil).accessibilityLabel("Show changes")
             Button { if let folder = store.folder { Task { await store.start(folder, session.client) } } } label: { Image(systemName: "square.and.pencil") }
@@ -68,6 +71,7 @@ struct CodeView: View {
         List {
             Section {
                 Button { Task { await store.start("", session.client) } } label: { Label("Quick session", systemImage: "plus") }
+                Button { store.showRecent = true } label: { Label("Recent sessions", systemImage: "clock.arrow.circlepath") }
             } footer: {
                 Text("For small changes and try-outs: a scratch folder, quick-code, kept in git on the server.")
             }
@@ -306,6 +310,65 @@ private struct CodeDiffSheet: View {
             .navigationTitle("Changes")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar { ToolbarItem(placement: .confirmationAction) { Button("Done") { dismiss() } } }
+        }
+    }
+}
+
+/// /sessions: his earlier coding sessions, newest first. Tap to continue; swipe to archive or delete.
+private struct CodeRecentSheet: View {
+    @Environment(Session.self) private var session
+    @Environment(\.dismiss) private var dismiss
+    var store: CodeStore
+    @State private var showArchived = false
+    @State private var deleting: CodeSessionRow?
+
+    var body: some View {
+        NavigationStack {
+            List {
+                let rows = store.recent.filter { $0.archived == showArchived }
+                if rows.isEmpty {
+                    Text(showArchived ? "No archived sessions." : "No coding sessions yet.").foregroundStyle(.secondary)
+                }
+                ForEach(rows) { row in
+                    Button {
+                        Task { await store.resume(row.id, session.client); if store.problem == nil { dismiss() } }
+                    } label: {
+                        VStack(alignment: .leading, spacing: 3) {
+                            HStack {
+                                Label(row.folder, systemImage: "folder").font(.subheadline.weight(.semibold))
+                                if row.current { Text("open").font(.caption2.weight(.semibold)).foregroundStyle(.tint) }
+                                Spacer()
+                                if let d = row.updated { Text(d, style: .relative).font(.caption).foregroundStyle(.secondary) }
+                            }
+                            Text(row.task.isEmpty ? "Nothing asked yet" : row.task).font(.footnote).lineLimit(2)
+                                .foregroundStyle(row.task.isEmpty ? .secondary : .primary)
+                            if let m = row.model { Text(store.models.first { $0.id == m }?.name ?? m).font(.caption2).foregroundStyle(.secondary) }
+                        }
+                    }
+                    .buttonStyle(.plain)
+                    .accessibilityHint("Continue this session")
+                    .swipeActions(edge: .trailing) {
+                        Button(role: .destructive) { deleting = row } label: { Label("Delete", systemImage: "trash") }
+                        Button { Task { await store.archive(row.id, !row.archived, session.client) } } label: {
+                            Label(row.archived ? "Unarchive" : "Archive", systemImage: row.archived ? "tray.and.arrow.up" : "archivebox")
+                        }
+                        .tint(.indigo)
+                    }
+                }
+            }
+            .navigationTitle(showArchived ? "Archived sessions" : "Recent sessions")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .cancellationAction) {
+                    Button(showArchived ? "Recent" : "Archived") { showArchived.toggle() }
+                }
+                ToolbarItem(placement: .confirmationAction) { Button("Done") { dismiss() } }
+            }
+            .refreshable { await store.loadRecent(session.client) }
+            .task { await store.loadRecent(session.client) }
+            .confirmationDialog("Delete this session?", isPresented: Binding(get: { deleting != nil }, set: { if !$0 { deleting = nil } }), presenting: deleting) { row in
+                Button("Delete", role: .destructive) { Task { await store.delete(row.id, session.client) } }
+            } message: { _ in Text("Its conversation with the coder is removed from the server. Files it changed stay as they are.") }
         }
     }
 }

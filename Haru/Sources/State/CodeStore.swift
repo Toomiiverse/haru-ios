@@ -15,6 +15,8 @@ final class CodeStore {
     var tokens = 0
     var problem: String?
     var diff: CodeDiff?
+    var recent: [CodeSessionRow] = []
+    var showRecent = false
     var busy = false
     /// Set by /exit; ConversationView switches back to her.
     var exitRequested = false
@@ -92,6 +94,7 @@ final class CodeStore {
         case "/exit": exitRequested = true; return true
         case "/stop": await stop(client); return true
         case "/diff": await loadDiff(client); return true
+        case "/sessions", "/resume": showRecent = true; return true
         case "/new": await start(folder ?? "", client); return true   // no project yet: a quick session
         case "/cd", "/code": await start(rest, client); return true   // no folder named: a quick session
         case "/model":
@@ -124,6 +127,32 @@ final class CodeStore {
 
     func setModel(_ id: String, _ client: HaruClient) async {
         await call(client) { let _: CodeOK = try await client.post("/api/code/model", ["model": .string(id)]); self.model = id }
+    }
+
+    func loadRecent(_ client: HaruClient) async {
+        await call(client) { let list: CodeSessions = try await client.get("/api/code/sessions"); self.recent = list.sessions }
+    }
+
+    /// Back into an earlier session: its cards come back on the stream.
+    func resume(_ id: String, _ client: HaruClient) async {
+        await call(client) {
+            let state: CodeFrame = try await client.post("/api/code/resume", ["id": .string(id)])
+            self.apply(state)
+            self.listen(client)
+        }
+    }
+
+    func archive(_ id: String, _ archived: Bool, _ client: HaruClient) async {
+        await call(client) { let _: CodeOK = try await client.post("/api/code/archive", ["id": .string(id), "archived": .bool(archived)]) }
+        await loadRecent(client)
+    }
+
+    /// Gone from the server too. Deleting the open one leaves the project list showing.
+    func delete(_ id: String, _ client: HaruClient) async {
+        let wasOpen = recent.first { $0.id == id }?.current == true
+        await call(client) { let _: CodeOK = try await client.post("/api/code/delete", ["id": .string(id)]) }
+        if wasOpen { close(); folder = nil; items = []; running = false }
+        await loadRecent(client)
     }
 
     func loadDiff(_ client: HaruClient) async {
