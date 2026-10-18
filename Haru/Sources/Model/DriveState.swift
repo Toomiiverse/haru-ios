@@ -44,8 +44,4 @@ struct DriveState {
                             URLQueryItem(name: "dirflg", value: "d")]
         return parts.url
     }
-
-    static let briefing = """
-    I'm starting a drive with you in CarPlay. Greet me in your own voice. Give me a brief spoken summary of the current weather and today's outstanding reminders, using only enabled phone tools and actual results. Skip unavailable data; never invent it. Credit Apple Weather if you use it. Keep the whole briefing under about 30 seconds, then ask where I'm going. While we're driving, keep replies concise and spoken. For directions use ios_maps; a prepared route still needs my Navigate tap in CarPlay, and is not proof navigation has started. Do not ask me to handle my phone while driving.
-    """
 }

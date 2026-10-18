@@ -725,33 +725,8 @@ final class ChatStore {
 
     var inCarPlay = false
     var onCarPlayInterruption: (() -> Void)?
-    private var drivingBriefingTask: Task<Bool, Never>?
-
-    /// Uses the normal chat/voice transport without consuming the phone composer's draft or attachments.
-    func drivingBriefing() async -> Bool {
-        guard !busy, !micOn, drivingBriefingTask == nil else { return false }
-        let task = Task { @MainActor in
-            self.busy = true
-            defer { self.busy = false }
-            let id = UUID().uuidString
-            self.entries.append(Entry(id: UUID().uuidString, kind: .me, text: DriveState.briefing))
-            self.entries.append(Entry(id: id, kind: .her, text: "", waiting: true))
-            await self.run(self.client.stream("/api/chat/stream", ["text": .string(DriveState.briefing)]), into: id)
-            let deadline = Date().addingTimeInterval(60)
-            while self.draining || self.audio.speaking {
-                if Task.isCancelled || Date() > deadline { self.hush(); return false }
-                do { try await Task.sleep(for: .milliseconds(100)) } catch { self.hush(); return false }
-            }
-            return !Task.isCancelled && self.session.signedIn == true
-        }
-        drivingBriefingTask = task
-        let result = await task.value
-        drivingBriefingTask = nil
-        return result
-    }
 
     func stopDrivingAudio() {
-        drivingBriefingTask?.cancel()
         endCall()
         stopTalking()
         hush()
