@@ -354,7 +354,9 @@ final class ChatStore {
             entries[i].reaction = nil
         }
         stage.attend("thinking", ms: 20_000)
-        await run(client.stream("/api/chat/retry", [:]), into: last.id)
+        // 4460: the server keeps a retry's outcome under this id too, so a dropped stream can still ask how it ended.
+        let requestID = UUID().uuidString
+        await run(client.stream("/api/chat/retry", ["requestId": .string(requestID)]), into: last.id, requestID: requestID)
     }
 
     var lastReply: Entry? {
