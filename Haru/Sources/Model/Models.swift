@@ -107,6 +107,8 @@ struct Ignored: Decodable {}
 /// POST /api/chat's answer: her line, or nothing when she let it pass.
 struct Said: Decodable { let reply: String?; let ignored: Bool? }
 struct ServerError: Decodable { let error: String? }
+/// GET /api/chat/receipt: how a message already sent stands — "pending", "done" (her reply) or "error".
+struct ChatReceipt: Decodable { let state: String?; let reply: String?; let ignored: Bool?; let error: String? }
 struct MemoryPage: Decodable { let memories: [String] }
 struct LookedUp: Decodable { let name: String? }
 

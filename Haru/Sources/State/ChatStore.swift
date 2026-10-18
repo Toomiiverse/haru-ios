@@ -317,7 +317,9 @@ final class ChatStore {
         let waitID = UUID().uuidString
         entries.append(Entry(id: waitID, kind: .her, text: "", waiting: true))
 
-        var body: [String: JSONValue] = ["text": .string(text)]
+        // The server keeps the turn under this id, so a dropped stream can ask how it ended.
+        let requestID = UUID().uuidString
+        var body: [String: JSONValue] = ["text": .string(text), "requestId": .string(requestID)]
         if !files.isEmpty { body["attachments"] = .array(files.map(\.record)) }
         if interrupted { body["interrupted"] = true }
         if let answering {
@@ -327,7 +329,7 @@ final class ChatStore {
             body["quoted"] = .string(Self.excerpt(of: answering.text))
         }
         stage.attend("thinking", ms: 20_000)
-        return await run(client.stream("/api/chat/stream", body), into: waitID, resend: text)
+        return await run(client.stream("/api/chat/stream", body), into: waitID, resend: text, requestID: requestID)
     }
 
     /// Enough of her line to know it by: the first 140 characters, cut at a word.
@@ -363,11 +365,12 @@ final class ChatStore {
     /// silence. False when the round was lost: cancelled, signed out, or failed
     /// on the server, in which case `resend` rides the system line that says so.
     @discardableResult
-    private func run(_ stream: AsyncThrowingStream<StreamEvent, Error>, into id: String, resend: String? = nil) async -> Bool {
+    private func run(_ stream: AsyncThrowingStream<StreamEvent, Error>, into id: String, resend: String? = nil, requestID: String? = nil) async -> Bool {
         var said = ""
         var reply: String?
         var ignored = false
         var failure: String?
+        var settled = false
         var begun = false
         var delivery = ChatSpeechDelivery()
         let speechSeed = Int.random(in: 0...2_147_483_647)
@@ -376,6 +379,7 @@ final class ChatStore {
                 try Task.checkCancellation()
                 if let error = event.error {
                     failure = error
+                    settled = true
                 } else if event.text == "\u{FFFD}" {
                     // The round was thrown away; back to waiting, and whatever
                     // she had started saying of it goes too.
@@ -398,6 +402,7 @@ final class ChatStore {
                 } else if event.done == true {
                     reply = event.reply
                     ignored = event.ignored ?? false
+                    settled = true
                 }
             }
         } catch is CancellationError {
@@ -408,6 +413,17 @@ final class ChatStore {
             return false
         } catch {
             failure = error.localizedDescription
+        }
+        // A stream that ends without her answer — a phone connection dropping mid-wait — no longer reads as a failed
+        // message: the server kept the turn (10-18, the reply landed 13 s after the drop, behind a "Send again").
+        if !settled, let requestID, !Task.isCancelled, let receipt = await outcome(of: requestID) {
+            if receipt.state == "done" {
+                failure = nil
+                reply = receipt.reply ?? ""
+                ignored = receipt.ignored ?? false
+            } else {
+                failure = receipt.error ?? failure
+            }
         }
 
         guard !Task.isCancelled, let i = entries.firstIndex(where: { $0.id == id }) else { return false }
@@ -438,6 +454,28 @@ final class ChatStore {
         // server. A quiet reload picks it up, and anything she added since.
         await load(completedReply: final)
         return true
+    }
+
+    /// How a sent message ended, asked every 2 s for up to two minutes while the connection comes back. Nil when the
+    /// server never took it (404) or it is still going when the wait runs out; the caller's failure then stands.
+    private func outcome(of requestID: String) async -> ChatReceipt? {
+        // Quick: no waiting for connectivity, so each ask is bounded and the loop keeps its deadline.
+        let quick = HaruClient(base: client.base, quick: true)
+        let until = Date().addingTimeInterval(120)
+        while Date() < until, !Task.isCancelled {
+            do {
+                let receipt = try await quick.receipt(requestID)
+                if receipt.state != "pending" { return receipt }
+            } catch HaruError.server(404, _) {
+                return nil
+            } catch HaruError.signedOut {
+                return nil
+            } catch {
+                // Still offline: ask again.
+            }
+            try? await Task.sleep(for: .seconds(2))
+        }
+        return nil
     }
 
     /// The words a failed line carried, sent again; the line itself goes.

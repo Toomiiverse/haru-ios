@@ -92,6 +92,14 @@ struct HaruClient: Sendable {
         return try JSONDecoder().decode(T.self, from: data)
     }
 
+    func receipt(_ id: String) async throws -> ChatReceipt {
+        var req = request("/api/chat/receipt", method: "GET", query: ["id": id])
+        req.cachePolicy = .reloadIgnoringLocalCacheData
+        let (data, response) = try await session.data(for: req)
+        try Self.check(response, data)
+        return try JSONDecoder().decode(ChatReceipt.self, from: data)
+    }
+
     /// Every POST past the login must be JSON, or the server answers 415 —
     /// including the ones with nothing to say, which send `{}`.
     func post<T: Decodable>(_ path: String, _ body: [String: JSONValue] = [:]) async throws -> T {
