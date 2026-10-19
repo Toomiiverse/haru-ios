@@ -53,8 +53,9 @@ final class Session {
 
     /// Asks for the day, which is the cheapest thing behind the login.
     func check(quick: Bool = false) async {
+        let checking = quick ? HaruClient(base: client.base, quick: true) : client
+        defer { if quick { checking.session.finishTasksAndInvalidate() } }
         do {
-            let checking = quick ? HaruClient(base: client.base, quick: true) : client
             let _: ChatPage = try await checking.get("/api/chat")
             signedIn = true
             problem = nil
@@ -63,8 +64,8 @@ final class Session {
             signedIn = false
             problem = nil
         } catch {
-            // Unreachable is not the same as signed out: keep whatever we knew.
-            if signedIn == nil { signedIn = false }
+            // Unreachable is not the same as signed out: keep whatever we knew. Before the
+            // first answer that is nil, and the waking screen shows the problem and asks again.
             problem = error.localizedDescription
         }
     }
