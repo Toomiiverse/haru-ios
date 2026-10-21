@@ -1,6 +1,6 @@
 import SwiftUI
 
-/// Coding mode: the coder's steps as cards (Codex / Claude Code-style), his prompts, its questions with
+/// The Code tab: his shell on the server by default (TerminalPane), and coding mode beside it: the coder's steps as cards (Codex / Claude Code-style), his prompts, its questions with
 /// Allow / Deny, a stop button while it works, the diff, and earlier sessions. Commands: /new /stop /diff /sessions /model /cd /exit.
 struct CodeView: View {
     @Environment(Session.self) private var session
@@ -9,8 +9,36 @@ struct CodeView: View {
     @State private var draft = ""
     @State private var showDiff = false
     @FocusState private var typing: Bool
+    @Environment(\.scenePhase) private var phase
+    /// The tab opens on his shell; the coder is one tap away, or comes up by itself when asked for (/code, a link, a push).
+    @State private var coding = false
+    @State private var terminal = TerminalLink()
 
     var body: some View {
+        VStack(spacing: 0) {
+            Picker("Mode", selection: $coding) {
+                Text("Terminal").tag(false)
+                Text("Coder").tag(true)
+            }
+            .pickerStyle(.segmented)
+            .padding(.horizontal, 16)
+            .padding(.top, 8)
+            if coding { coder } else { shell }
+        }
+        .onAppear { if nav.wantsCode != nil { coding = true } }
+        .onChange(of: nav.wantsCode) { _, folder in if folder != nil { coding = true } }
+    }
+
+    private var shell: some View {
+        TerminalPane(link: terminal)
+            .padding(.top, 8)
+            .onAppear { terminal.visible = true; let client = session.client; DispatchQueue.main.async { terminal.resume(client) } }
+            .onDisappear { terminal.disconnect() }
+            .onChange(of: phase) { _, now in if now == .active, terminal.visible { terminal.resume(session.client) } }
+            .accessibilityLabel("Terminal on the server")
+    }
+
+    private var coder: some View {
         VStack(spacing: 0) {
             header
             Divider()
@@ -24,7 +52,7 @@ struct CodeView: View {
             store.pendingFolder = takeFolder()
             Task { await store.open(session.client) }
         }
-        .onChange(of: store.exitRequested) { _, now in if now { store.exitRequested = false; nav.tab = .chat } }
+        .onChange(of: store.exitRequested) { _, now in if now { store.exitRequested = false; coding = false; nav.tab = .chat } }
         // Leaving the tab: the stream closes and Haru hears once what was worked on.
         .onDisappear { let client = session.client; Task { await store.leave(client) } }
         .onChange(of: store.diff == nil) { _, none in if !none { showDiff = true } }

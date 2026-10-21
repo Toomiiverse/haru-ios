@@ -18,6 +18,11 @@ packages:
     # Pinned: `branch: main` re-resolved on every CI run, so the same source
     # shipped a different onnxruntime between builds 60 and 62 (2026-09-18).
     revision: 95448a7559c453fcd87645bd67b247ffb45f85b0
+  # The Code tab's terminal (Views/TerminalPane.swift). v1.11.2, pinned for the same reason; 1.12+ adds a Metal
+  # renderer whose shaders need the Metal toolchain, which the CI runner does not have (2026-10-21).
+  SwiftTerm:
+    url: https://github.com/migueldeicaza/SwiftTerm
+    revision: b1262db5b6bea699a8260a8c66999436c508ca56
 settings:
   base:
     SWIFT_VERSION: "5.0"
@@ -110,6 +115,8 @@ targets:
       - target: HaruNotify
       - package: LiveKitWakeWord
         product: LiveKitWakeWord
+      - package: SwiftTerm
+        product: SwiftTerm
       # sherpa-onnx, fetched by scripts/build-ipa.sh — see WakeSpotter.swift.
       - framework: Vendor/SherpaOnnxC.xcframework
         embed: true
