@@ -16,11 +16,18 @@ struct CodeView: View {
 
     var body: some View {
         VStack(spacing: 0) {
-            Picker("Mode", selection: $coding) {
-                Text("Terminal").tag(false)
-                Text("Coder").tag(true)
+            HStack(spacing: 10) {
+                Picker("Mode", selection: $coding) {
+                    Text("Terminal").tag(false)
+                    Text("Coder").tag(true)
+                }
+                .pickerStyle(.segmented)
+                // The accessory row's keyboard key swaps in SwiftTerm's own keys; this is the way out. Tapping the terminal brings it back.
+                if !coding {
+                    Button { terminal.view?.resignFirstResponder() } label: { Image(systemName: "keyboard.chevron.compact.down") }
+                        .accessibilityLabel("Hide keyboard")
+                }
             }
-            .pickerStyle(.segmented)
             .padding(.horizontal, 16)
             .padding(.top, 8)
             if coding { coder } else { shell }
