@@ -23,6 +23,8 @@ struct RootView: View {
                 MainTabs()
             }
         }
+        // Fill the screen first, or the background is only as big as the waking face and line (10-21).
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
         .background(Color("LaunchBackground").ignoresSafeArea())
     }
 }
