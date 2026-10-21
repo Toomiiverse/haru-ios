@@ -99,6 +99,9 @@ struct TerminalPane: UIViewRepresentable {
 
     func makeUIView(context: Context) -> TerminalView {
         let view = TerminalView(frame: .zero, font: UIFont.monospacedSystemFont(ofSize: 12, weight: .regular))
+        // SwiftTerm 1.11 leaves the view opaque, so iOS never clears a redrawn strip and old glyphs show under new
+        // ones (tmux's scroll region, Claude Code's redraws). Upstream's fix (d44954c, 1.14) is this one line.
+        view.isOpaque = false
         view.terminalDelegate = link
         link.view = view
         return view
