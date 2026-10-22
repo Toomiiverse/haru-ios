@@ -44,6 +44,7 @@ enum Refresh {
             }
             // While we are awake anyway: her list and the Reminders list, brought level.
             await Reminders.shared.sync(force: true)
+            await WakeAlarm.follow(client: session.client)
             return true
         } catch {
             return false

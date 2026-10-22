@@ -124,6 +124,8 @@ final class PushDelegate: NSObject, UIApplicationDelegate, UNUserNotificationCen
         Shared.store(standing: standing)
         Shared.reloadWidgets(force: true)
         await Reminders.shared.sync(force: true)
+        // "Wake me up at …" said to her: the push that tells him is what wakes the app to set the alarm.
+        await WakeAlarm.follow(client: Session.savedClient(quick: true))
         return .newData
     }
 

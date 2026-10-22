@@ -259,7 +259,7 @@ struct MoreView: View {
         .onChange(of: prefs.upBy) { _, upBy in
             guard prefsLoaded, WakeAlarm.on else { return }
             Task {
-                if let said = await WakeAlarm.follow(upBy: upBy, client: session.client) { problem = said }
+                if let said = await WakeAlarm.followDaily(upBy: upBy, client: session.client) { problem = said }
                 alarmOn = WakeAlarm.on
             }
         }

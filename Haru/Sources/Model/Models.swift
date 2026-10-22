@@ -258,6 +258,9 @@ struct PushPrefs: Codable, Equatable {
     var quietFrom: String
     var quietTo: String
     var upBy: String
+    /// His one-off "wake me up at …" as the server holds it, "yyyy-MM-dd'T'HH:mm"
+    /// in his zone, or empty. Read for the alarm (WakeAlarm.follow); never sent back.
+    var wakeAt: String?
     /// Set by the Focus filter, not the sheet: her nudges are held while a
     /// Focus with it is on. Read for the row that says so; never sent back.
     var held: Bool?
