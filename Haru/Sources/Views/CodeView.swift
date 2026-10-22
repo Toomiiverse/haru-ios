@@ -158,6 +158,8 @@ struct CodeView: View {
                 .padding(.vertical, 10)
             }
             .scrollDismissesKeyboard(.interactively)
+            // Opening the tab on a loaded session starts at the latest step, as the chat does.
+            .defaultScrollAnchor(.bottom)
             .onChange(of: store.items.count) { _, _ in
                 withAnimation { proxy.scrollTo(store.running ? "working" : (store.items.last.map { $0.kind + $0.id } ?? ""), anchor: .bottom) }
             }
