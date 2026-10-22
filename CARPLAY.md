@@ -34,7 +34,9 @@ tells her you are driving on the car speakers: short replies, no screen, and the
 maps tool when you ask for directions. Since server 4740 her voice filter admits
 call turns unscored while the car screen is in a conversation, so anyone in the
 car can talk to her; End conversation is the guard. Reopening the scene in the
-same connection resumes the conversation.
+same connection resumes the conversation. The car screen shows her face for Talk,
+Connecting, Listening, Thinking and Speaking (one picture each, from her look); the
+failure states keep their symbols.
 
 Ask for driving directions. Haru searches nearby using MapKit, returns ambiguity to
 her existing tools when several places match, and calculates an estimated travel time

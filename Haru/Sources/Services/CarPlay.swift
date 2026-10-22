@@ -58,6 +58,15 @@ import OSLog
         "busy": ("Finish the current reply, then tap Talk", "ellipsis"),
         "timeout": ("Connection timed out. Tap Talk to retry", "clock.badge.exclamationmark")]
 
+    /// Her face on the car screen for Talk and the live states (CarPlay shows a voice control state image
+    /// at up to 150 pt; these are 450 px at 3x). The failure states keep their symbols so the message reads.
+    private static let pictures: [String: UIImage] = Dictionary(uniqueKeysWithValues: (["ready"] + CarScreen.live).compactMap { name in
+        Bundle.main.url(forResource: "car-" + name, withExtension: "png")
+            .flatMap { try? Data(contentsOf: $0) }
+            .flatMap { UIImage(data: $0, scale: 3) }
+            .map { (name, $0) }
+    })
+
     /// A voice control template for one layout, opening on `first`. Each state keeps
     /// its buttons and handlers for the template's lifetime.
     private func makeTemplate(_ layout: CarScreen, first: String) -> CPVoiceControlTemplate {
@@ -65,7 +74,7 @@ import OSLog
         let states = layout.ordered(first: first).map { identifier -> CPVoiceControlState in
             let label = Self.labels[identifier] ?? (title: identifier.capitalized, symbol: "waveform")
             let state = CPVoiceControlState(identifier: identifier, titleVariants: [label.title],
-                                            image: UIImage(systemName: label.symbol), repeats: false)
+                                            image: Self.pictures[identifier] ?? UIImage(systemName: label.symbol), repeats: false)
             let idle = CarScreen.idle.contains(identifier)
             // CarPlay delivers button presses on its XPC queue, not the main thread. Everything
             // below touches the chat store and her stage web view, which are main-actor only;
