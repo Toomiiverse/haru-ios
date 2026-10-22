@@ -103,9 +103,45 @@ struct TerminalPane: UIViewRepresentable {
         // ones (tmux's scroll region, Claude Code's redraws). Upstream's fix (d44954c, 1.14) is this one line.
         view.isOpaque = false
         view.terminalDelegate = link
+        // tmux holds the history (the phone's tmux server has mouse on), so a swipe has to reach tmux as wheel steps:
+        // SwiftTerm on iOS only scrolls its own buffer, which tmux's alternate screen leaves empty. Its own taps and
+        // drags would start tmux selections instead, so they stay off; long-press select and copy are unchanged.
+        view.allowMouseReporting = false
+        let swipe = UIPanGestureRecognizer(target: context.coordinator, action: #selector(Swipe.moved(_:)))
+        swipe.delegate = context.coordinator
+        view.addGestureRecognizer(swipe)
         link.view = view
         return view
     }
 
     func updateUIView(_ view: TerminalView, context: Context) {}
+
+    func makeCoordinator() -> Swipe { Swipe() }
+
+    /// One wheel step per line of finger travel; finger down shows older lines, as in any iOS list.
+    @MainActor
+    final class Swipe: NSObject, UIGestureRecognizerDelegate {
+        private var travel: CGFloat = 0
+
+        @objc func moved(_ gesture: UIPanGestureRecognizer) {
+            guard let view = gesture.view as? TerminalView else { return }
+            let terminal = view.getTerminal()
+            if gesture.state == .began { travel = 0 }
+            guard gesture.state == .changed, terminal.mouseMode != .off, !view.selectionActive else { return }
+            let line = max(view.bounds.height / CGFloat(max(terminal.rows, 1)), 1)
+            travel += gesture.translation(in: view).y
+            gesture.setTranslation(.zero, in: view)
+            let at = gesture.location(in: view)
+            let col = min(max(Int(at.x / max(view.bounds.width / CGFloat(max(terminal.cols, 1)), 1)), 0), terminal.cols - 1)
+            let row = min(max(Int((at.y - view.contentOffset.y) / line), 0), terminal.rows - 1)
+            while abs(travel) >= line {
+                let older = travel > 0
+                let flags = terminal.encodeButton(button: older ? 4 : 5, release: false, shift: false, meta: false, control: false)
+                terminal.sendEvent(buttonFlags: flags, x: col, y: row)
+                travel += older ? -line : line
+            }
+        }
+
+        func gestureRecognizer(_ gestureRecognizer: UIGestureRecognizer, shouldRecognizeSimultaneouslyWith other: UIGestureRecognizer) -> Bool { true }
+    }
 }
