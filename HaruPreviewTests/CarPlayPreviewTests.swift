@@ -23,12 +23,13 @@ final class CarPlayPreviewTests: XCTestCase {
         let car = HaruCarPlayScene()
         // Every state alone on its own template, plus the two the Navigate button changes.
         var screens = (Array(CarScreen.idle).sorted() + CarScreen.live).map { ($0, false) }
-        screens += [("ready", true), ("speaking", true)]
+        screens += [("ready", true), ("listening", true)]
         for (identifier, route) in screens {
             let layout = CarScreen.layout(showing: identifier, hasRoute: route, current: nil)
             let state = try XCTUnwrap(car.makeTemplate(layout, first: identifier).voiceControlStates.first)
             XCTAssertEqual(state.identifier, identifier)
             let template = CPVoiceControlTemplate(voiceControlStates: [state])
+            car.setBar(of: template, for: identifier, hasRoute: route)
             for size in sizes {
                 for style in [UIUserInterfaceStyle.dark, .light] {
                     guard let controller = Self.carView(of: template) else {

@@ -99,32 +99,43 @@ import OSLog
             } else {
                 CPVoiceControlState(identifier: identifier, titleVariants: [label.title], image: image, repeats: false)
             }
-            let idle = CarScreen.idle.contains(identifier)
+            // Only the idle states carry a button on the card: with action buttons CarPlay gives
+            // the picture what is left under the title, nothing at all on a 240-point car
+            // (preview 2026-10-24). The live states keep End conversation and Navigate in the bar.
+            guard CarScreen.idle.contains(identifier) else { return state }
             // CarPlay delivers button presses on its XPC queue, not the main thread. Everything
             // below touches the chat store and her stage web view, which are main-actor only;
             // a tap handled in place crashed the app in WebKit (build 166, 2026-10-11).
-            let conversation = CPButton(image: UIImage(systemName: idle ? "mic.fill" : "stop.fill")!) { [weak self, weak owner] _ in
+            let talk = CPButton(image: UIImage(systemName: "mic.fill")!) { [weak self, weak owner] _ in
                 Task { @MainActor in
                     guard let self, let owner, self.scene === owner else { return }
-                    if idle { self.start(fromTap: true) } else { self.stop() }
+                    self.start(fromTap: true)
                 }
             }
-            conversation.title = idle ? "Talk" : "End conversation"
-            var buttons = [conversation]
-            if layout.hasRoute {
-                let navigate = CPButton(image: UIImage(systemName: "arrow.triangle.turn.up.right.diamond.fill")!) { [weak self, weak owner] _ in
-                    Task { @MainActor in
-                        guard let self, let owner, self.scene === owner else { return }
-                        self.navigate()
-                    }
-                }
-                navigate.title = "Navigate"
-                buttons.insert(navigate, at: 0)
-            }
-            state.actionButtons = buttons
+            talk.title = "Talk"
+            state.actionButtons = [talk]
             return state
         }
-        return CPVoiceControlTemplate(voiceControlStates: states)
+        let template = CPVoiceControlTemplate(voiceControlStates: states)
+        setBar(of: template, for: first, hasRoute: layout.hasRoute)
+        return template
+    }
+
+    /// The template's bar for a state: End conversation leading while she is in a conversation,
+    /// Navigate trailing while a route is prepared. Changed with every state switch.
+    func setBar(of template: CPVoiceControlTemplate, for identifier: String, hasRoute: Bool) {
+        let owner = scene
+        func button(_ symbol: String, _ act: @escaping @MainActor (HaruCarPlayScene) -> Void) -> CPBarButton {
+            CPBarButton(image: UIImage(systemName: symbol)!) { [weak self, weak owner] _ in
+                Task { @MainActor in
+                    guard let self, let owner, self.scene === owner else { return }
+                    act(self)
+                }
+            }
+        }
+        // End conversation; Navigate.
+        template.leadingNavigationBarButtons = CarScreen.idle.contains(identifier) ? [] : [button("stop.fill") { $0.stop() }]
+        template.trailingNavigationBarButtons = hasRoute ? [button("arrow.triangle.turn.up.right.diamond.fill") { $0.navigate() }] : []
     }
 
     /// Puts `identifier` on the car screen: a state switch on the current template, or a
@@ -171,6 +182,7 @@ import OSLog
         if wait <= 0 {
             pendingSwitch?.cancel(); pendingSwitch = nil
             voice?.activateVoiceControlState(withIdentifier: identifier)
+            if let voice, let screen { setBar(of: voice, for: identifier, hasRoute: screen.hasRoute) }
             shown = identifier
             lastSwitch = Date()
         } else if pendingSwitch == nil {
