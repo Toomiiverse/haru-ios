@@ -67,6 +67,12 @@ cp "Vendor/$SPK_MODEL" Haru/Resources/kws/
 
 xcodegen generate
 
+# A commit saying so draws the car screen instead of building the app (scripts/carplay-preview.sh).
+if git log -1 --format=%B | grep -qx 'Haru-CarPlay-Preview: true'; then
+  bash scripts/carplay-preview.sh carplay-preview
+  exit 0
+fi
+
 # Signed, and straight to TestFlight, when the App Store Connect key is in the
 # environment (the workflow passes the repository secrets ASC_KEY_ID,
 # ASC_ISSUER_ID, ASC_KEY_P8 and APPLE_TEAM_ID). Xcode's cloud signing makes

@@ -59,6 +59,9 @@ entitlement approval. Enable `upload_to_testflight` only after Apple has approve
 An unsigned IPA is a build artifact, not an installable signed CarPlay app.
 
 Run `bash scripts/test-drive.sh` for the connection lifecycle and Maps URL checks.
+`scripts/carplay-preview.sh` draws the voice card as CarPlay renders it, every state at three
+car sizes in both appearances, with no car (a commit message line `Haru-CarPlay-Preview: true`
+makes CI do it and keep the pictures as the carplay-preview artifact).
 The existing transport, chat-delivery, stage recovery and retired model cleanup tests
 also run in CI. Signed archives additionally verify the compiled scene registration,
 app signature and Apple's provisioning profile contain the approved entitlement.

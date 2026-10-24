@@ -88,7 +88,7 @@ import OSLog
 
     /// A voice control template for one layout, opening on `first`. Each state keeps
     /// its buttons and handlers for the template's lifetime.
-    private func makeTemplate(_ layout: CarScreen, first: String) -> CPVoiceControlTemplate {
+    func makeTemplate(_ layout: CarScreen, first: String) -> CPVoiceControlTemplate {
         let owner = scene
         let states = layout.ordered(first: first).map { identifier -> CPVoiceControlState in
             let label = Self.labels[identifier] ?? (title: identifier.capitalized, symbol: "waveform")

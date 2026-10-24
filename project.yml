@@ -245,6 +245,20 @@ targets:
         GENERATE_INFOPLIST_FILE: "NO"
         SKIP_INSTALL: "YES"
         SUPPORTS_MACCATALYST: "NO"
+  # The car's voice card drawn to PNG files (HaruPreviewTests/CarPlayPreviewTests.swift), run by
+  # scripts/carplay-preview.sh. The only test bundle; the other checks are swiftc scripts.
+  HaruPreviewTests:
+    type: bundle.unit-test
+    platform: iOS
+    sources:
+      - path: HaruPreviewTests
+    dependencies:
+      - target: Haru
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.toomiiverse.haru.JF3928RYMD.previewtests
+        GENERATE_INFOPLIST_FILE: "YES"
+        SUPPORTS_MACCATALYST: "NO"
 schemes:
   Haru:
     build:
@@ -252,5 +266,8 @@ schemes:
         Haru: all
     run:
       config: Debug
+    test:
+      targets:
+        - HaruPreviewTests
     archive:
       config: Release

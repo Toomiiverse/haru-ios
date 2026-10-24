@@ -12,3 +12,5 @@ xcuserdata/
 Vendor/
 Haru/Resources/kws/
 HaruNotify/Info.plist
+# Drawn by scripts/carplay-preview.sh.
+carplay-preview/
