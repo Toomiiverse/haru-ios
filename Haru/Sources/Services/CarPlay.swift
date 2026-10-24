@@ -75,7 +75,16 @@ import OSLog
             ctx.cgContext.drawRadialGradient(gradient, startCenter: centre, startRadius: 0,
                                              endCenter: centre, endRadius: rect.height * 0.75, options: [])
         }
+
     }()
+    /// Her face on the car screen for Talk and the live states (CarPlay shows a voice control state image
+    /// at up to 150 pt; these are 450 px at 3x). The failure states keep their symbols so the message reads.
+    private static let pictures: [String: UIImage] = Dictionary(uniqueKeysWithValues: (["ready"] + CarScreen.live).compactMap { name in
+        Bundle.main.url(forResource: "car-" + name, withExtension: "png")
+            .flatMap { try? Data(contentsOf: $0) }
+            .flatMap { UIImage(data: $0, scale: 3) }
+            .map { (name, $0) }
+    })
 
     /// A voice control template for one layout, opening on `first`. Each state keeps
     /// its buttons and handlers for the template's lifetime.
@@ -83,7 +92,7 @@ import OSLog
         let owner = scene
         let states = layout.ordered(first: first).map { identifier -> CPVoiceControlState in
             let label = Self.labels[identifier] ?? (title: identifier.capitalized, symbol: "waveform")
-            let image = UIImage(systemName: label.symbol)
+            let image = Self.pictures[identifier] ?? UIImage(systemName: label.symbol)
             let state = if #available(iOS 27.0, *) {
                 CPVoiceControlState(identifier: identifier, titleVariants: [label.title], image: image,
                                     backgroundImage: Self.backdrop, repeats: false)

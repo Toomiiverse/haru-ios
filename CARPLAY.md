@@ -25,11 +25,18 @@ no on-device conversation model is restored by the CarPlay integration.
 
 ## In the car
 
-Opening Haru starts a short spoken greeting, available weather and reminders, then
-asks for a destination and starts the existing voice call. The briefing is sent as a
-normal request to Haru's server and appears in conversation history. It doesn't send
-anything staged in the phone composer. Reopening the scene in the same connection
-resumes conversation without another briefing.
+Opening Haru goes straight into the existing voice call, like answering a phone:
+the car screen shows Listening once her line answers and her server greets you.
+The spoken briefing that used to run first was removed (it kept the car on
+Connecting with no sound). Since server 4720 her brain reads the car screen state
+off the phone's heartbeat and, while the car is in a conversation, every call turn
+tells her you are driving on the car speakers: short replies, no screen, and the
+maps tool when you ask for directions. Since server 4740 her voice filter admits
+call turns unscored while the car screen is in a conversation, so anyone in the
+car can talk to her; End conversation is the guard. Reopening the scene in the
+same connection resumes the conversation. The car screen shows her face for Talk,
+Connecting, Listening, Thinking and Speaking (one picture each, from her look); the
+failure states keep their symbols.
 
 Ask for driving directions. Haru searches nearby using MapKit, returns ambiguity to
 her existing tools when several places match, and calculates an estimated travel time
