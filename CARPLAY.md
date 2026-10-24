@@ -42,6 +42,7 @@ CarPlay screen, including opening Maps, pauses the voice session. Tap Haru to ta
 again. Phone calls and Siri also interrupt it; recording doesn't restart silently.
 The phone's wake-word standby preference is retained, but standby is suspended in
 CarPlay. Haru never displays chat transcripts or generated pictures in the car.
+On iOS 27 the voice card sits on a dark plum backdrop lit in her accent; older phones show the plain card.
 
 ## Building and verification
 

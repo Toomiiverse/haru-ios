@@ -58,14 +58,38 @@ import OSLog
         "busy": ("Finish the current reply, then tap Talk", "ellipsis"),
         "timeout": ("Connection timed out. Tap Talk to retry", "clock.badge.exclamationmark")]
 
+    /// Behind the voice card on iOS 27: her launch plum, lit by her accent a little above the
+    /// middle, where the card puts its picture. Drawn once, opaque, so it reads the same on the
+    /// car's light and dark appearances. shortcut: one 1200x720 picture for every car; make it
+    /// per display size if a wide screen shows it soft.
+    private static let backdrop: UIImage = {
+        let size = CGSize(width: 1200, height: 720)
+        let format = UIGraphicsImageRendererFormat(); format.scale = 1; format.opaque = true
+        return UIGraphicsImageRenderer(size: size, format: format).image { ctx in
+            let rect = CGRect(origin: .zero, size: size)
+            UIColor(red: 0.094, green: 0.026, blue: 0.060, alpha: 1).setFill(); ctx.fill(rect)
+            let glow = UIColor(red: 0.962, green: 0.579, blue: 0.765, alpha: 1)
+            let colors = [glow.withAlphaComponent(0.30).cgColor, glow.withAlphaComponent(0).cgColor] as CFArray
+            guard let gradient = CGGradient(colorsSpace: CGColorSpaceCreateDeviceRGB(), colors: colors, locations: [0, 1]) else { return }
+            let centre = CGPoint(x: rect.midX, y: rect.height * 0.38)
+            ctx.cgContext.drawRadialGradient(gradient, startCenter: centre, startRadius: 0,
+                                             endCenter: centre, endRadius: rect.height * 0.75, options: [])
+        }
+    }()
+
     /// A voice control template for one layout, opening on `first`. Each state keeps
     /// its buttons and handlers for the template's lifetime.
     private func makeTemplate(_ layout: CarScreen, first: String) -> CPVoiceControlTemplate {
         let owner = scene
         let states = layout.ordered(first: first).map { identifier -> CPVoiceControlState in
             let label = Self.labels[identifier] ?? (title: identifier.capitalized, symbol: "waveform")
-            let state = CPVoiceControlState(identifier: identifier, titleVariants: [label.title],
-                                            image: UIImage(systemName: label.symbol), repeats: false)
+            let image = UIImage(systemName: label.symbol)
+            let state = if #available(iOS 27.0, *) {
+                CPVoiceControlState(identifier: identifier, titleVariants: [label.title], image: image,
+                                    backgroundImage: Self.backdrop, repeats: false)
+            } else {
+                CPVoiceControlState(identifier: identifier, titleVariants: [label.title], image: image, repeats: false)
+            }
             let idle = CarScreen.idle.contains(identifier)
             // CarPlay delivers button presses on its XPC queue, not the main thread. Everything
             // below touches the chat store and her stage web view, which are main-actor only;
