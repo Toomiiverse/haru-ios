@@ -56,13 +56,20 @@ final class AppLock {
 
     /// Back in front: a quick look at a notification keeps the app open, a real
     /// absence locks it again.
+    ///
+    /// The timestamp is consumed exactly once. Re-locking on every `.active`
+    /// while Face ID's own sheet made the app inactive put the prompt in a
+    /// loop (2026-10-30): the sheet closes, the app becomes active, the old
+    /// background stamp still looks like an absence, and the lock asks again.
+    /// The lock cover asks once when it appears; a cancelled prompt leaves the
+    /// Unlock button, not another automatic prompt.
     func cameBack() {
-        guard available, wanted else { return }
-        if let leftAt, Date().timeIntervalSince(leftAt) < Self.graceSeconds {
-            return
-        }
+        guard available, wanted else { leftAt = nil; return }
+        guard let leftAt else { return }
+        self.leftAt = nil
+        guard Date().timeIntervalSince(leftAt) >= Self.graceSeconds else { return }
+        message = nil
         locked = true
-        Task { await unlock() }
     }
 
     /// Used by a notification reply: the app has come to the front anyway, so
@@ -147,7 +154,10 @@ struct LockCover: View {
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .background(Color("LaunchBackground").ignoresSafeArea())
-        .task { await lock.unlock() }
+        // Ask once when this cover appears. A cancelled or failed prompt leaves
+        // `message` set, so SwiftUI re-showing the cover does not start the
+        // Face ID sheet again by itself; the Unlock button is the retry.
+        .task { if lock.message == nil { await lock.unlock() } }
     }
 }
 
