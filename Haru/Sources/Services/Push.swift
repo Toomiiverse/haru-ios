@@ -8,8 +8,9 @@ import UserNotifications
 /// page's pushes. Refresh.swift's polling stays as the fallback for the days
 /// the server has no key yet, or Apple is having one.
 ///
-/// And answering from the lock screen: every line takes a reply under the
-/// notification, and a reminder about a thing on the list takes "Done" too.
+/// A reminder about a thing on the list still takes "Done" under the
+/// notification. There is no reply there: the chat is voice-only, so hearing
+/// her or answering her means opening the app, past its lock.
 /// The server names the category and puts what the buttons need under `haru`
 /// in the payload (apnsPayload in electron/apns.ts); Refresh.swift builds the
 /// same for its local notifications.
@@ -18,7 +19,7 @@ enum Push {
     private static let uploadedKey = "haru.apns.uploaded"
 
     enum Category: String { case line = "HARU_LINE", event = "HARU_EVENT" }
-    enum Action: String { case reply = "REPLY", done = "DONE" }
+    enum Action: String { case done = "DONE" }
 
     /// A debug build run from Xcode talks to Apple's sandbox; TestFlight and
     /// the store are production. The server needs to know which.
@@ -30,16 +31,16 @@ enum Push {
         #endif
     }
 
-    /// The buttons, declared once at launch. A reply asks for the phone's
-    /// authentication and comes to the front, where the app's own lock can ask
-    /// for Face ID before her words go out — 2026-10-30: a reply under the
-    /// notification used to send in the background with no unlock at all.
+    /// The buttons, declared once at launch. There is no reply under a
+    /// notification any more: the chat is voice-only (5379), and a typed reply
+    /// from the lock screen was a way round both the voice filter and the app
+    /// lock. A reminder can still be ticked off, and iOS asks for the phone's
+    /// authentication first.
     static func registerCategories() {
-        let reply = UNTextInputNotificationAction(identifier: Action.reply.rawValue, title: "Reply", options: [.foreground, .authenticationRequired], textInputButtonTitle: "Send", textInputPlaceholder: "Say something back")
         let done = UNNotificationAction(identifier: Action.done.rawValue, title: "Done", options: [.authenticationRequired])
         UNUserNotificationCenter.current().setNotificationCategories([
-            UNNotificationCategory(identifier: Category.line.rawValue, actions: [reply], intentIdentifiers: []),
-            UNNotificationCategory(identifier: Category.event.rawValue, actions: [reply, done], intentIdentifiers: []),
+            UNNotificationCategory(identifier: Category.line.rawValue, actions: [], intentIdentifiers: []),
+            UNNotificationCategory(identifier: Category.event.rawValue, actions: [done], intentIdentifiers: []),
         ])
     }
 
@@ -76,20 +77,6 @@ enum Push {
         } catch {
             // Next time the app comes to the front.
         }
-    }
-
-    /// A reply typed under the notification, sent as if from the chat. The
-    /// quick client has a short timeout and there is no retry: the server
-    /// keeps answering after the socket drops, and a retry would be a second
-    /// message. The exchange shows in the chat the next time it loads.
-    @MainActor
-    static func reply(_ text: String) async {
-        let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !trimmed.isEmpty else { return }
-        // This arrives from outside the app. It is still her owner's hand only
-        // if the phone proves it.
-        guard await AppLock.shared.ensureUnlocked() else { return }
-        let _: Ignored? = try? await Session.savedClient(quick: true).post("/api/chat", ["text": .string(trimmed)])
     }
 
     /// "Done" under a reminder: the item on the list is ticked off.
@@ -152,9 +139,6 @@ final class PushDelegate: NSObject, UIApplicationDelegate, UNUserNotificationCen
         let haru = response.notification.request.content.userInfo["haru"] as? [String: Any]
         let kind = haru?["kind"] as? String
         switch response.actionIdentifier {
-        case Push.Action.reply.rawValue:
-            let text = (response as? UNTextInputNotificationResponse)?.userText ?? ""
-            await Push.holdingOn { await Push.reply(text) }
         case Push.Action.done.rawValue:
             guard let id = haru?["eventId"] as? String else { return }
             await Push.holdingOn { await Push.markDone(id) }

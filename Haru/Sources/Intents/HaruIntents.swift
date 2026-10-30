@@ -23,36 +23,6 @@ enum HaruIntentError: Error, CustomLocalizedStringResourceConvertible {
     }
 }
 
-/// A line to her, and her reply back — spoken by Siri, or handed on to the
-/// next step of a Shortcut.
-struct TellHaruIntent: AppIntent {
-    static let title: LocalizedStringResource = "Tell Haru"
-    static let description = IntentDescription("Send her a line, and hear what she says back.")
-    static let openAppWhenRun = false
-
-    @Parameter(title: "Message", requestValueDialog: "What do you want to tell her?")
-    var text: String
-
-    static var parameterSummary: some ParameterSummary {
-        Summary("Tell Haru \(\.$text)")
-    }
-
-    func perform() async throws -> some IntentResult & ProvidesDialog & ReturnsValue<String> {
-        let line = text.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !line.isEmpty else { throw HaruIntentError.nothingToSay }
-        let said: Said
-        do {
-            said = try await Session.savedClient(quick: true).post("/api/chat", ["text": .string(line)])
-        } catch HaruError.signedOut {
-            throw HaruIntentError.signedOut
-        } catch {
-            throw HaruIntentError.unreachable
-        }
-        let reply = (said.reply ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
-        let spoken = reply.isEmpty ? "She read it and said nothing." : reply
-        return .result(value: reply, dialog: IntentDialog("\(spoken)"))
-    }
-}
 
 /// The app, open on the chat, listening — the Action button's job.
 struct TalkToHaruIntent: AppIntent {
@@ -143,12 +113,6 @@ struct HaruFocusFilter: SetFocusFilterIntent {
 /// The phrases Siri answers to, and the tiles in the Shortcuts app.
 struct HaruShortcuts: AppShortcutsProvider {
     static var appShortcuts: [AppShortcut] {
-        AppShortcut(
-            intent: TellHaruIntent(),
-            phrases: ["Tell \(.applicationName)", "Message \(.applicationName)", "Say something to \(.applicationName)"],
-            shortTitle: "Tell Haru",
-            systemImageName: "bubble.left.and.bubble.right.fill"
-        )
         AppShortcut(
             intent: TalkToHaruIntent(),
             phrases: ["Talk to \(.applicationName)", "Open \(.applicationName) and listen"],

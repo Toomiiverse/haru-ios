@@ -23,10 +23,6 @@ struct ChatView: View {
     @Environment(ChatStore.self) private var chat
     @Environment(Navigator.self) private var nav
     @Environment(\.scenePhase) private var phase
-    @State private var draft = ""
-    /// What was just sent and when, so a dictation transcript that lands in
-    /// the box after the send is known for what it is.
-    @State private var lastSent: (text: String, at: Date)?
     @State private var showPhotos = false
     @State private var showFiles = false
     @State private var showCamera = false
@@ -42,7 +38,6 @@ struct ChatView: View {
     @State private var showStatus = false
     @AppStorage("stage.zoom") private var stageZoom = 1.0
     @AppStorage("stage.lift") private var stageLift = 0.0
-    @FocusState private var typing: Bool
     /// Four minutes: she is being carried around, not watched. Anything faster
     /// reads as pestering, and the spacing on her side would refuse it anyway.
     private let poll = Timer.publish(every: 240, on: .main, in: .common).autoconnect()
@@ -119,14 +114,6 @@ struct ChatView: View {
             guard wanted else { return }
             nav.wantsCall = false
             if chat.call == nil { Task { await chat.holdMic() } }
-        }
-        // She leans over her panel's edge toward typing without leaving her home.
-        // Picking a line to answer is the start of typing the answer.
-        .onChange(of: chat.replyingTo?.id) { _, id in
-            if id != nil { typing = true }
-        }
-        .onChange(of: typing) { _, now in
-            withAnimation(.easeInOut(duration: 0.3)) { compact = now }
         }
         .photosPicker(isPresented: $showPhotos, selection: $photo, matching: .images)
         .fullScreenCover(isPresented: $showCamera) {
@@ -335,7 +322,6 @@ struct ChatView: View {
             .scrollDismissesKeyboard(.interactively)
             .onChange(of: chat.entries.count) { _, _ in scrollToEnd(proxy) }
             .onChange(of: chat.entries.last?.text) { _, _ in scrollToEnd(proxy) }
-            .onTapGesture { typing = false }
         }
     }
 
@@ -355,7 +341,7 @@ struct ChatView: View {
     // MARK: Composer
 
     private var canSend: Bool {
-        !draft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || !chat.staged.isEmpty
+        !chat.staged.isEmpty
     }
 
     private var composer: some View {
@@ -363,6 +349,11 @@ struct ChatView: View {
             if let target = chat.replyingTo { replyBar(target) }
             if !chat.staged.isEmpty { chips }
             if chat.talkState != .off || chat.callState != .off || chat.standby { talkPill }
+            Text("Voice only here. Text lives in the Code tab.")
+                .font(.caption2)
+                .foregroundStyle(.tertiary)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .padding(.horizontal, 12)
             HStack(alignment: .bottom, spacing: 8) {
                 Menu {
                     if CameraPicker.available {
@@ -375,23 +366,6 @@ struct ChatView: View {
                 }
                 .padding(.bottom, 6)
                 .simultaneousGesture(TapGesture().onEnded { chat.stage.attend("attachment", ms: 4_200) })
-
-                TextField("Say something", text: $draft, axis: .vertical)
-                    .lineLimit(1...6)
-                    .onChange(of: draft) { _, now in
-                        // The words just sent, back in the box within a minute:
-                        // dictation writing its transcript late. Cleared, and only
-                        // ever those words — a short exact repeat is left alone.
-                        if let last = lastSent, now == last.text, last.text.count >= 12, Date().timeIntervalSince(last.at) < 90 {
-                            draft = ""
-                            return
-                        }
-                        if !now.isEmpty { chat.stage.attend("typing", ms: 1_800) }
-                    }
-                    .padding(.horizontal, 12)
-                    .padding(.vertical, 8)
-                    .background(Color(uiColor: .secondarySystemBackground), in: RoundedRectangle(cornerRadius: 18))
-                    .focused($typing)
 
                 if canSend {
                     Button { Task { await sendDraft() } } label: {
@@ -527,24 +501,10 @@ struct ChatView: View {
 
     // MARK: Doing things
 
+    /// The chat is voice-only (5379): this sends only the staged attachments.
+    /// Typed conversation lives in the Code tab, not here.
     private func sendDraft() async {
-        // Dictation still running when send is tapped writes its final
-        // transcript back into the box after the box has been cleared, so the
-        // words just sent sit there as if unsent (2026-09-06). Ending the input
-        // session first commits them; the box is then read whole and emptied.
-        if Responding.first?.textInputMode?.primaryLanguage == "dictation" {
-            typing = false
-            try? await Task.sleep(for: .milliseconds(150))
-            typing = true
-        }
-        let text = draft
-        // /code is not for her: it opens coding mode, and the words never reach her chat.
-        if let folder = codeCommand(text) { draft = ""; Navigator.shared.openCode(folder.isEmpty ? nil : folder); return }
-        draft = ""
-        lastSent = (text, Date())
-        let sent = await chat.send(text)
-        // Not delivered: the words come back to the box, unless something new is already there.
-        if !sent { lastSent = nil; if draft.isEmpty { draft = text } }
+        _ = await chat.send("")
     }
 
     /// Straight off the camera: the same JPEG, sized the same way, as a picture
