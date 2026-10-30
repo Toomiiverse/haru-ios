@@ -30,11 +30,13 @@ enum Push {
         #endif
     }
 
-    /// The buttons, declared once at launch. `options: []` keeps a reply in
-    /// the background — no unlock, no app coming to the front.
+    /// The buttons, declared once at launch. A reply asks for the phone's
+    /// authentication and comes to the front, where the app's own lock can ask
+    /// for Face ID before her words go out — 2026-10-30: a reply under the
+    /// notification used to send in the background with no unlock at all.
     static func registerCategories() {
-        let reply = UNTextInputNotificationAction(identifier: Action.reply.rawValue, title: "Reply", options: [], textInputButtonTitle: "Send", textInputPlaceholder: "Say something back")
-        let done = UNNotificationAction(identifier: Action.done.rawValue, title: "Done", options: [])
+        let reply = UNTextInputNotificationAction(identifier: Action.reply.rawValue, title: "Reply", options: [.foreground, .authenticationRequired], textInputButtonTitle: "Send", textInputPlaceholder: "Say something back")
+        let done = UNNotificationAction(identifier: Action.done.rawValue, title: "Done", options: [.authenticationRequired])
         UNUserNotificationCenter.current().setNotificationCategories([
             UNNotificationCategory(identifier: Category.line.rawValue, actions: [reply], intentIdentifiers: []),
             UNNotificationCategory(identifier: Category.event.rawValue, actions: [reply, done], intentIdentifiers: []),
@@ -80,13 +82,18 @@ enum Push {
     /// quick client has a short timeout and there is no retry: the server
     /// keeps answering after the socket drops, and a retry would be a second
     /// message. The exchange shows in the chat the next time it loads.
+    @MainActor
     static func reply(_ text: String) async {
         let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty else { return }
+        // This arrives from outside the app. It is still her owner's hand only
+        // if the phone proves it.
+        guard await AppLock.shared.ensureUnlocked() else { return }
         let _: Ignored? = try? await Session.savedClient(quick: true).post("/api/chat", ["text": .string(trimmed)])
     }
 
     /// "Done" under a reminder: the item on the list is ticked off.
+    @MainActor
     static func markDone(_ id: String) async {
         let _: Ignored? = try? await Session.savedClient(quick: true).post("/api/agenda/done", ["id": .string(id)])
     }

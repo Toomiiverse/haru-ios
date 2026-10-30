@@ -21,6 +21,7 @@ struct HaruApp: App {
     @State private var session: Session
     @State private var chat: ChatStore
     @State private var locator: Locator
+    @State private var appLock = AppLock.shared
 
     init() {
         let runtime = HaruRuntime.shared
@@ -39,10 +40,12 @@ struct HaruApp: App {
         .onChange(of: phase) { _, now in
             switch now {
             case .background:
+                appLock.wentBackground()
                 PhoneTools.shared.activity(foreground: false)
                 Refresh.schedule()
                 locator.rest()
             case .active:
+                appLock.cameBack()
                 PhoneTools.shared.activity(foreground: true)
                 locator.wake()
                 Shared.publish(base: session.client.base)
@@ -60,7 +63,8 @@ struct HaruApp: App {
     }
 
     private var appContent: some View {
-        RootView()
+        ZStack {
+            RootView()
                 .environment(session)
                 .environment(chat)
                 .environment(locator)
@@ -70,8 +74,18 @@ struct HaruApp: App {
                 .onReceive(NotificationCenter.default.publisher(for: Shared.asked)) { _ in
                     if phase == .active || Shared.waitingAsk == .hangUp { takeAsk() }
                 }
-                .preferredColorScheme(.dark)
-                .tint(Color("AccentColor"))
+            if appLock.locked {
+                LockCover()
+                    .environment(appLock)
+            } else if phase != .active {
+                // Her last message is not what the app switcher should show.
+                PrivacyCover()
+                    .allowsHitTesting(false)
+            }
+        }
+        .environment(appLock)
+        .preferredColorScheme(.dark)
+        .tint(Color("AccentColor"))
     }
 
     /// What a control asked for (Shared.ask), now that the app is in front and

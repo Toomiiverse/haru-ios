@@ -9,6 +9,7 @@ struct MoreView: View {
     @Environment(Session.self) private var session
     @Environment(Locator.self) private var locator
     @Environment(ChatStore.self) private var chat
+    @Environment(AppLock.self) private var appLock
     @Environment(\.scenePhase) private var phase
     @State private var delivery: Delivery?
     @State private var prefs = PushPrefs.blank
@@ -49,6 +50,21 @@ struct MoreView: View {
                     Text("Her ears")
                 } footer: {
                     Text("Long-press one of your own bubbles when she gets a word wrong. She keeps the difference.")
+                }
+                Section {
+                    Toggle("Require Face ID", isOn: Binding(
+                        get: { appLock.wanted },
+                        set: { appLock.setWanted($0) }
+                    ))
+                    .disabled(!appLock.available)
+                    Button("Lock Haru now") { appLock.lockNow() }
+                        .disabled(!appLock.available)
+                } header: {
+                    Text("Lock")
+                } footer: {
+                    Text(appLock.available
+                         ? "Face ID or your passcode when the app opens and after a minute away. Anyone holding the unlocked phone sees this screen instead of her chat. Standby and a call already in progress keep running."
+                         : "Set a phone passcode first — the lock needs Face ID or a passcode to let you back in.")
                 }
                 Section {
                     LabeledContent("Her address", value: session.baseURLString)
